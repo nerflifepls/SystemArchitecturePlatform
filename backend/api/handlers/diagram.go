@@ -1,14 +1,16 @@
-package api
+package handlers
 
 import (
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"backend/api/authctx"
+	apirequest "backend/api/request"
+	"backend/api/response"
 	"backend/config"
 	"backend/domain"
 	"backend/services"
@@ -65,124 +67,128 @@ type appendUpdateResponse struct {
 	AcceptedAt time.Time `json:"acceptedAt"`
 }
 
+func NewDiagramHandler(appConfig config.Config, diagramService *services.DiagramService) DiagramHandler {
+	return DiagramHandler{config: appConfig, diagrams: diagramService}
+}
+
 func (handler DiagramHandler) List(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	projectID, parseErr := parseUUIDParam(request, "projectId")
+	projectID, parseErr := apirequest.UUIDParam(request, "projectId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
-	items, nextCursor, listErr := handler.diagrams.ListDiagrams(request.Context(), auth.User.ID, projectID, parseLimit(request), optionalCursor(request))
+	items, nextCursor, listErr := handler.diagrams.ListDiagrams(request.Context(), auth.User.ID, projectID, apirequest.Limit(request), apirequest.OptionalCursor(request))
 	if listErr != nil {
-		writeError(writer, request, listErr)
+		response.WriteError(writer, request, listErr)
 		return
 	}
-	writeJSON(writer, http.StatusOK, diagramListResponse{Items: items, NextCursor: nullableCursor(nextCursor)})
+	response.WriteJSON(writer, http.StatusOK, diagramListResponse{Items: items, NextCursor: apirequest.NullableCursor(nextCursor)})
 }
 
 func (handler DiagramHandler) Create(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	projectID, parseErr := parseUUIDParam(request, "projectId")
+	projectID, parseErr := apirequest.UUIDParam(request, "projectId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	var payload diagramRequest
-	if decodeErr := decodeJSON(request, &payload); decodeErr != nil {
-		writeError(writer, request, decodeErr)
+	if decodeErr := response.DecodeJSON(request, &payload); decodeErr != nil {
+		response.WriteError(writer, request, decodeErr)
 		return
 	}
 	diagram, createErr := handler.diagrams.CreateDiagram(request.Context(), auth.User.ID, projectID, payload.Title)
 	if createErr != nil {
-		writeError(writer, request, createErr)
+		response.WriteError(writer, request, createErr)
 		return
 	}
-	writeJSON(writer, http.StatusCreated, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID)})
+	response.WriteJSON(writer, http.StatusCreated, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID)})
 }
 
 func (handler DiagramHandler) Get(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	diagram, role, getErr := handler.diagrams.GetDiagram(request.Context(), auth.User.ID, diagramID)
 	if getErr != nil {
-		writeError(writer, request, getErr)
+		response.WriteError(writer, request, getErr)
 		return
 	}
-	writeJSON(writer, http.StatusOK, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID), Role: role})
+	response.WriteJSON(writer, http.StatusOK, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID), Role: role})
 }
 
 func (handler DiagramHandler) Update(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	var payload diagramRequest
-	if decodeErr := decodeJSON(request, &payload); decodeErr != nil {
-		writeError(writer, request, decodeErr)
+	if decodeErr := response.DecodeJSON(request, &payload); decodeErr != nil {
+		response.WriteError(writer, request, decodeErr)
 		return
 	}
 	diagram, updateErr := handler.diagrams.UpdateDiagram(request.Context(), auth.User.ID, diagramID, payload.Title)
 	if updateErr != nil {
-		writeError(writer, request, updateErr)
+		response.WriteError(writer, request, updateErr)
 		return
 	}
-	writeJSON(writer, http.StatusOK, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID)})
+	response.WriteJSON(writer, http.StatusOK, diagramResponse{Diagram: diagram, Sync: handler.sync(diagram.ID)})
 }
 
 func (handler DiagramHandler) Delete(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	if deleteErr := handler.diagrams.DeleteDiagram(request.Context(), auth.User.ID, diagramID); deleteErr != nil {
-		writeError(writer, request, deleteErr)
+		response.WriteError(writer, request, deleteErr)
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (handler DiagramHandler) GetSnapshot(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	diagram, snapshotErr := handler.diagrams.GetSnapshot(request.Context(), auth.User.ID, diagramID)
 	if snapshotErr != nil {
-		writeError(writer, request, snapshotErr)
+		response.WriteError(writer, request, snapshotErr)
 		return
 	}
 	snapshotBytes := diagram.SnapshotBytes
@@ -199,57 +205,57 @@ func (handler DiagramHandler) GetSnapshot(writer http.ResponseWriter, request *h
 }
 
 func (handler DiagramHandler) SaveSnapshot(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
-	baseUpdateSeq, baseErr := parseRequiredIntHeader(request, "X-Base-Update-Seq")
+	baseUpdateSeq, baseErr := apirequest.RequiredIntHeader(request, "X-Base-Update-Seq")
 	if baseErr != nil {
-		writeError(writer, request, baseErr)
+		response.WriteError(writer, request, baseErr)
 		return
 	}
-	snapshotBytes, readErr := readLimitedBody(writer, request, maxSnapshotBytes)
+	snapshotBytes, readErr := apirequest.LimitedBody(writer, request, maxSnapshotBytes)
 	if readErr != nil {
-		writeError(writer, request, readErr)
+		response.WriteError(writer, request, readErr)
 		return
 	}
 	result, saveErr := handler.diagrams.SaveSnapshot(request.Context(), auth.User.ID, diagramID, baseUpdateSeq, snapshotBytes)
 	if saveErr != nil {
-		writeError(writer, request, saveErr)
+		response.WriteError(writer, request, saveErr)
 		return
 	}
-	writeJSON(writer, http.StatusOK, result)
+	response.WriteJSON(writer, http.StatusOK, result)
 }
 
 func (handler DiagramHandler) ListUpdates(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	afterSeq := int64(-1)
 	if rawAfterSeq := request.URL.Query().Get("afterSeq"); rawAfterSeq != "" {
 		parsedAfterSeq, afterErr := strconv.ParseInt(rawAfterSeq, 10, 64)
 		if afterErr != nil {
-			writeError(writer, request, services.BadRequest("afterSeq must be an integer"))
+			response.WriteError(writer, request, services.BadRequest("afterSeq must be an integer"))
 			return
 		}
 		afterSeq = parsedAfterSeq
 	}
 	updates, lastUpdateSeq, listErr := handler.diagrams.ListUpdates(request.Context(), auth.User.ID, diagramID, afterSeq)
 	if listErr != nil {
-		writeError(writer, request, listErr)
+		response.WriteError(writer, request, listErr)
 		return
 	}
 	responseItems := make([]diagramUpdateResponse, 0, len(updates))
@@ -263,41 +269,41 @@ func (handler DiagramHandler) ListUpdates(writer http.ResponseWriter, request *h
 			CreatedAt:    update.CreatedAt,
 		})
 	}
-	writeJSON(writer, http.StatusOK, diagramUpdatesResponse{Items: responseItems, LastUpdateSeq: lastUpdateSeq})
+	response.WriteJSON(writer, http.StatusOK, diagramUpdatesResponse{Items: responseItems, LastUpdateSeq: lastUpdateSeq})
 }
 
 func (handler DiagramHandler) AppendUpdate(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	updateID, updateIDErr := uuid.Parse(strings.TrimSpace(request.Header.Get("X-Update-Id")))
 	if updateIDErr != nil {
-		writeError(writer, request, services.BadRequest("X-Update-Id must be a valid UUID"))
+		response.WriteError(writer, request, services.BadRequest("X-Update-Id must be a valid UUID"))
 		return
 	}
 	clientID := request.Header.Get("X-Client-Id")
-	updateBytes, readErr := readLimitedBody(writer, request, maxUpdateBytes)
+	updateBytes, readErr := apirequest.LimitedBody(writer, request, maxUpdateBytes)
 	if readErr != nil {
-		writeError(writer, request, readErr)
+		response.WriteError(writer, request, readErr)
 		return
 	}
 	update, duplicate, appendErr := handler.diagrams.AppendUpdate(request.Context(), auth.User.ID, diagramID, updateID, clientID, updateBytes)
 	if appendErr != nil {
-		writeError(writer, request, appendErr)
+		response.WriteError(writer, request, appendErr)
 		return
 	}
 	statusCode := http.StatusCreated
 	if duplicate {
 		statusCode = http.StatusOK
 	}
-	writeJSON(writer, statusCode, appendUpdateResponse{Seq: update.Seq, UpdateID: update.UpdateID.String(), AcceptedAt: update.CreatedAt})
+	response.WriteJSON(writer, statusCode, appendUpdateResponse{Seq: update.Seq, UpdateID: update.UpdateID.String(), AcceptedAt: update.CreatedAt})
 }
 
 func (handler DiagramHandler) sync(diagramID uuid.UUID) *syncResponse {
@@ -306,27 +312,6 @@ func (handler DiagramHandler) sync(diagramID uuid.UUID) *syncResponse {
 		UpdatesURL:   "/api/v1/diagrams/" + diagramID.String() + "/updates",
 		WebsocketURL: appendDiagramQuery(handler.config.LiveEventsPublicURL, diagramID),
 	}
-}
-
-func parseRequiredIntHeader(request *http.Request, name string) (int64, error) {
-	value := strings.TrimSpace(request.Header.Get(name))
-	if value == "" {
-		return 0, services.BadRequest(name + " is required")
-	}
-	parsedValue, parseErr := strconv.ParseInt(value, 10, 64)
-	if parseErr != nil {
-		return 0, services.BadRequest(name + " must be an integer")
-	}
-	return parsedValue, nil
-}
-
-func readLimitedBody(writer http.ResponseWriter, request *http.Request, maxBytes int64) ([]byte, error) {
-	request.Body = http.MaxBytesReader(writer, request.Body, maxBytes)
-	bodyBytes, readErr := io.ReadAll(request.Body)
-	if readErr != nil {
-		return nil, services.PayloadTooLarge("request body is too large")
-	}
-	return bodyBytes, nil
 }
 
 func appendDiagramQuery(baseURL string, diagramID uuid.UUID) string {

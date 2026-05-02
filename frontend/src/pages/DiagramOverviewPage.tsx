@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Circle, Maximize2, Users } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { crdtApi, diagramApi } from "../api/endpoints";
+import { ButtonLink, ErrorPanel, FormError, MetricGrid, PageHeader, ToolPanel } from "../components/ui";
 import { useDiagramPresence } from "../hooks/useDiagramPresence";
 import { getErrorMessage } from "../utils/errors";
 import { getEditorConnections, getUniquePresenceUsers } from "../utils/presence";
@@ -32,35 +33,41 @@ export function DiagramOverviewPage() {
 		queryFn: ({ signal }) => crdtApi.getSnapshot(diagramId, signal),
 		enabled: Boolean(diagramId),
 	});
+	const snapshotPayload =
+		snapshotQuery.data ? formatBytes(snapshotQuery.data.byteLength)
+		: snapshotQuery.isPending ? "Loading"
+		: "Unavailable";
+	const updatedAt =
+		diagramQuery.data?.updatedAt ? new Date(diagramQuery.data.updatedAt).toLocaleString() : "Not saved";
 
 	return (
 		<div className="page-stack">
-			<div className="page-heading">
-				<div>
-					<span className="eyebrow">Diagram</span>
-					<h1>{diagramQuery.data?.title ?? "Diagram"}</h1>
-				</div>
-				<div className="page-actions">
-					<Link className="secondary-button" to={`/workspaces/${workspaceId}/projects/${projectId}`}>
-						<ArrowLeft size={16} />
-						<span>Project</span>
-					</Link>
-					<Link
-						className="primary-button"
-						to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}/editor`}
-					>
-						<Maximize2 size={16} />
-						<span>Open editor</span>
-					</Link>
-				</div>
-			</div>
+			<PageHeader
+				eyebrow="Diagram"
+				title={diagramQuery.data?.title ?? "Diagram"}
+				actions={
+					<>
+						<ButtonLink to={`/workspaces/${workspaceId}/projects/${projectId}`}>
+							<ArrowLeft size={16} />
+							<span>Project</span>
+						</ButtonLink>
+						<ButtonLink
+							variant="primary"
+							to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}/editor`}
+						>
+							<Maximize2 size={16} />
+							<span>Open editor</span>
+						</ButtonLink>
+					</>
+				}
+			/>
 
 			{diagramQuery.isError ?
-				<div className="error-panel">{getErrorMessage(diagramQuery.error)}</div>
+				<ErrorPanel>{getErrorMessage(diagramQuery.error)}</ErrorPanel>
 			:	null}
 
 			<div className="overview-grid">
-				<section className="tool-panel overview-panel" aria-labelledby="snapshot-status-title">
+				<ToolPanel className="overview-panel" aria-labelledby="snapshot-status-title">
 					<div>
 						<span className="section-icon">
 							<Circle size={16} />
@@ -68,32 +75,22 @@ export function DiagramOverviewPage() {
 						<h2 id="snapshot-status-title">Snapshot status</h2>
 						<p className="muted-copy">Saved state and update sequence for this diagram.</p>
 					</div>
-					<div className="metric-grid wide-metrics">
-						<span>Version</span>
-						<strong>{diagramQuery.data?.snapshotVersion ?? 1}</strong>
-						<span>Last update sequence</span>
-						<strong>{diagramQuery.data?.lastUpdateSeq ?? 0}</strong>
-						<span>Snapshot payload</span>
-						<strong>
-							{snapshotQuery.data ?
-								formatBytes(snapshotQuery.data.byteLength)
-							: snapshotQuery.isPending ?
-								"Loading"
-							:	"Unavailable"}
-						</strong>
-						<span>Updated</span>
-						<strong>
-							{diagramQuery.data?.updatedAt ?
-								new Date(diagramQuery.data.updatedAt).toLocaleString()
-							:	"Not saved"}
-						</strong>
+					<div className="wide-metrics">
+						<MetricGrid
+							items={[
+								{ label: "Version", value: diagramQuery.data?.snapshotVersion ?? 1 },
+								{ label: "Last update sequence", value: diagramQuery.data?.lastUpdateSeq ?? 0 },
+								{ label: "Snapshot payload", value: snapshotPayload },
+								{ label: "Updated", value: updatedAt },
+							]}
+						/>
 					</div>
 					{snapshotQuery.isError ?
-						<p className="form-error">{getErrorMessage(snapshotQuery.error)}</p>
+						<FormError>{getErrorMessage(snapshotQuery.error)}</FormError>
 					:	null}
-				</section>
+				</ToolPanel>
 
-				<section className="tool-panel overview-panel" aria-labelledby="active-editors-title">
+				<ToolPanel className="overview-panel" aria-labelledby="active-editors-title">
 					<div>
 						<span className="section-icon">
 							<Users size={16} />
@@ -102,14 +99,16 @@ export function DiagramOverviewPage() {
 						<p className="muted-copy">People currently connected to the full-screen editor.</p>
 					</div>
 					<div className="presence-summary">
-						<div className="metric-grid wide-metrics">
-							<span>Users connected</span>
-							<strong>{editorUsers.length}</strong>
-							<span>Realtime status</span>
-							<strong>{presence.status}</strong>
+						<div className="wide-metrics">
+							<MetricGrid
+								items={[
+									{ label: "Users connected", value: editorUsers.length },
+									{ label: "Realtime status", value: presence.status },
+								]}
+							/>
 						</div>
 						{presence.lastError ?
-							<p className="form-error">{presence.lastError}</p>
+							<FormError>{presence.lastError}</FormError>
 						:	null}
 						{editorUsers.length === 0 ?
 							<p className="muted-copy">No one is editing this diagram right now.</p>
@@ -126,7 +125,7 @@ export function DiagramOverviewPage() {
 							</ul>
 						}
 					</div>
-				</section>
+				</ToolPanel>
 			</div>
 		</div>
 	);

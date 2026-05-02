@@ -1,0 +1,145 @@
+.sidePanel {
+	display: grid;
+	align-content: start;
+	gap: 14px;
+	padding: 16px;
+	border: var(--border-width) solid var(--border);
+	border-width: 0 0 0 1px;
+	border-radius: 0;
+	background: oklch(0.145 0.014 240 / 0.96);
+	box-shadow: none;
+	overflow: auto;
+}
+
+.sidePanel.collapsed {
+	justify-items: center;
+	padding: 10px 8px;
+	overflow: hidden;
+}
+
+.section {
+	display: grid;
+	gap: 12px;
+	min-width: 0;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--border);
+}
+
+.section:last-child {
+	padding-bottom: 0;
+	border-bottom: 0;
+}
+
+.sectionHeading,
+.title,
+.nodeMeta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.sectionHeading {
+	justify-content: space-between;
+}
+
+.title {
+	color: var(--primary-glow);
+}
+
+.title h2 {
+	margin: 0;
+	color: var(--text-main);
+	font-size: 0.96rem;
+	font-weight: 800;
+}
+
+.collapseButton {
+	flex: 0 0 auto;
+}
+
+.metricGrid {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 8px 12px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--border-radius-small);
+	background: var(--bg-input);
+	font-size: 0.9rem;
+}
+
+.metricGrid span {
+	color: var(--text-sub);
+}
+
+.metricGrid strong {
+	font-weight: 900;
+}
+
+.syncLabel.live {
+	color: var(--primary-glow);
+}
+
+.syncLabel.loading,
+.syncLabel.saving {
+	color: oklch(0.88 0.1 150);
+}
+
+.syncLabel.offline,
+.syncLabel.error {
+	color: oklch(0.78 0.16 29);
+}
+
+.actions {
+	display: grid;
+	gap: 9px;
+}
+
+.actions :global(.primary-button),
+.actions :global(.secondary-button),
+.section :global(.edit-form .secondary-button) {
+	width: 100%;
+}
+
+.nodeMeta {
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
+
+.nodeMeta span {
+	padding: 5px 8px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--bg-input);
+	color: var(--text-sub);
+	font-size: 0.76rem;
+	font-weight: 900;
+}
+
+.emptyState {
+	padding: 12px;
+	border: 1px dashed var(--border);
+	border-radius: var(--border-radius-small);
+	background: oklch(0.18 0.018 240 / 0.72);
+	color: var(--text-sub);
+	font-size: 0.86rem;
+	font-weight: 800;
+}
+
+@media (max-width: 860px) {
+	.sidePanel {
+		border-width: 1px 0 0;
+	}
+
+	.sidePanel.collapsed {
+		align-content: center;
+		justify-items: end;
+	}
+}
+
+@media (max-width: 640px) {
+	.sidePanel {
+		padding: 14px;
+	}
+}

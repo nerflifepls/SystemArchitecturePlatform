@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppShell } from "./components/AppShell";
+import { StatusPanel } from "./components/ui";
 import { useSession } from "./hooks/useAuth";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DiagramEditorPage } from "./pages/DiagramEditorPage";
@@ -17,7 +18,7 @@ function RequireAuth() {
 	if (sessionQuery.isPending) {
 		return (
 			<div className="screen-center">
-				<div className="status-panel">Checking session...</div>
+				<StatusPanel>Checking session...</StatusPanel>
 			</div>
 		);
 	}

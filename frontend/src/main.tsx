@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
-// @ts-ignore Vite handles CSS side-effect imports during bundling.
 import "./style.css";
 
 const queryClient = new QueryClient({

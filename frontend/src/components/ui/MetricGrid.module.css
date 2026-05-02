@@ -1,0 +1,25 @@
+.grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 10px 16px;
+}
+
+.label {
+	color: var(--text-sub);
+}
+
+.value {
+	color: var(--text-main);
+	font-weight: 800;
+	text-align: right;
+}
+
+@media (max-width: 520px) {
+	.grid {
+		grid-template-columns: 1fr;
+	}
+
+	.value {
+		text-align: left;
+	}
+}

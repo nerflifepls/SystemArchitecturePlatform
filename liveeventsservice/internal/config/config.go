@@ -1,3 +1,4 @@
+// Package config loads runtime configuration for the live events service.
 package config
 
 import (
@@ -7,6 +8,7 @@ import (
 	"strings"
 )
 
+// Config contains environment-derived runtime settings.
 type Config struct {
 	Port                 string
 	RedisAddr            string
@@ -16,6 +18,7 @@ type Config struct {
 	SessionCookieName    string
 }
 
+// Load reads configuration from the process environment and validates URL fields.
 func Load() (Config, error) {
 	loadedConfig := Config{
 		Port:                 envOrDefault("PORT", "8080"),
@@ -24,7 +27,7 @@ func Load() (Config, error) {
 		BackendInternalToken: strings.TrimSpace(os.Getenv("BACKEND_INTERNAL_TOKEN")),
 		FrontendOrigin:       strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")),
 		SessionCookieName:    envOrDefault("SESSION_COOKIE_NAME", "sid"),
-	}
+	}	
 
 	backendURL, parseErr := normalizeHTTPURL(loadedConfig.BackendInternalURL)
 	if parseErr != nil {

@@ -1,3 +1,4 @@
+// Package realtime manages websocket connections, Redis presence, and CRDT update relay.
 package realtime
 
 import (

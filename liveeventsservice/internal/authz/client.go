@@ -1,3 +1,4 @@
+// Package authz authorizes realtime diagram access through the backend internal API.
 package authz
 
 import (
@@ -21,12 +22,14 @@ var (
 	ErrUnauthorized = errors.New("authorization credentials are invalid")
 )
 
+// Client calls the backend internal authorization API.
 type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
 }
 
+// Result is the backend authorization response for a diagram join request.
 type Result struct {
 	Allowed bool    `json:"allowed"`
 	Role    string  `json:"role"`
@@ -34,12 +37,14 @@ type Result struct {
 	User    User    `json:"user"`
 }
 
+// Diagram identifies the authorized diagram and its parent resources.
 type Diagram struct {
 	ID          string `json:"id"`
 	ProjectID   string `json:"projectId"`
 	WorkspaceID string `json:"workspaceId"`
 }
 
+// User describes the authorized user returned by the backend.
 type User struct {
 	ID        string  `json:"id"`
 	Email     string  `json:"email"`
@@ -47,6 +52,7 @@ type User struct {
 	AvatarURL *string `json:"avatarUrl"`
 }
 
+// NewClient validates backend connection settings and returns an authorization client.
 func NewClient(baseURL string, token string, httpClient *http.Client) (*Client, error) {
 	trimmedURL := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	parsedURL, parseErr := url.Parse(trimmedURL)
@@ -67,6 +73,7 @@ func NewClient(baseURL string, token string, httpClient *http.Client) (*Client, 
 	return &Client{baseURL: parsedURL.String(), token: strings.TrimSpace(token), httpClient: httpClient}, nil
 }
 
+// AuthorizeDiagram verifies whether a user can join a diagram realtime session.
 func (client *Client) AuthorizeDiagram(ctx context.Context, diagramID uuid.UUID, userID uuid.UUID) (Result, error) {
 	if client == nil || client.httpClient == nil {
 		return Result{}, ErrUnavailable

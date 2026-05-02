@@ -1,9 +1,11 @@
-package api
+package handlers
 
 import (
 	"net/http"
 	"time"
 
+	"backend/api/authctx"
+	"backend/api/response"
 	"backend/config"
 	"backend/domain"
 	"backend/services"
@@ -36,45 +38,49 @@ type sessionResponse struct {
 	LastSeenAt time.Time `json:"lastSeenAt,omitempty"`
 }
 
+func NewAuthHandler(appConfig config.Config, authService *services.AuthService) AuthHandler {
+	return AuthHandler{config: appConfig, auth: authService}
+}
+
 func (handler AuthHandler) Google(writer http.ResponseWriter, request *http.Request) {
 	var payload googleLoginRequest
-	if decodeErr := decodeJSON(request, &payload); decodeErr != nil {
-		writeError(writer, request, decodeErr)
+	if decodeErr := response.DecodeJSON(request, &payload); decodeErr != nil {
+		response.WriteError(writer, request, decodeErr)
 		return
 	}
 	result, loginErr := handler.auth.LoginWithGoogle(request.Context(), payload.IDToken)
 	if loginErr != nil {
-		writeError(writer, request, loginErr)
+		response.WriteError(writer, request, loginErr)
 		return
 	}
 	setSessionCookie(writer, handler.config, result.Session)
-	writeJSON(writer, http.StatusOK, authResponse{
+	response.WriteJSON(writer, http.StatusOK, authResponse{
 		User:    userToResponse(result.User),
 		Session: sessionResponse{ExpiresAt: result.Session.ExpiresAt},
 	})
 }
 
 func (handler AuthHandler) Me(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
 	setSessionCookie(writer, handler.config, auth.Session)
-	writeJSON(writer, http.StatusOK, authResponse{
+	response.WriteJSON(writer, http.StatusOK, authResponse{
 		User:    userToResponse(auth.User),
 		Session: sessionResponse{ID: auth.Session.ID, ExpiresAt: auth.Session.ExpiresAt, LastSeenAt: auth.Session.LastSeenAt},
 	})
 }
 
 func (handler AuthHandler) Refresh(writer http.ResponseWriter, request *http.Request) {
-	auth, ok := currentAuth(request.Context())
+	auth, ok := authctx.Current(request.Context())
 	if !ok {
-		writeError(writer, request, services.Unauthorized("session is required"))
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
 		return
 	}
 	setSessionCookie(writer, handler.config, auth.Session)
-	writeJSON(writer, http.StatusOK, authResponse{
+	response.WriteJSON(writer, http.StatusOK, authResponse{
 		User:    userToResponse(auth.User),
 		Session: sessionResponse{ID: auth.Session.ID, ExpiresAt: auth.Session.ExpiresAt, LastSeenAt: auth.Session.LastSeenAt},
 	})
@@ -84,7 +90,7 @@ func (handler AuthHandler) Logout(writer http.ResponseWriter, request *http.Requ
 	cookie, cookieErr := request.Cookie(handler.config.SessionCookieName)
 	if cookieErr == nil && cookie.Value != "" {
 		if logoutErr := handler.auth.LogoutBySessionID(request.Context(), cookie.Value); logoutErr != nil {
-			writeError(writer, request, logoutErr)
+			response.WriteError(writer, request, logoutErr)
 			return
 		}
 	}

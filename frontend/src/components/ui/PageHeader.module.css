@@ -1,0 +1,43 @@
+.header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 18px;
+}
+
+.titleStack {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.titleStack h1 {
+	overflow: hidden;
+	color: var(--text-main);
+	font-size: 1.65rem;
+	font-weight: 800;
+	line-height: 1.12;
+	letter-spacing: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 10px;
+	min-width: 0;
+}
+
+@media (max-width: 780px) {
+	.header {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.actions {
+		justify-content: flex-start;
+	}
+}

@@ -2,52 +2,57 @@ import {
 	addEdge,
 	applyEdgeChanges,
 	applyNodeChanges,
-	Background,
-	Controls,
-	Handle,
-	MiniMap,
-	Position,
-	ReactFlow,
 	reconnectEdge,
-	type NodeProps,
 	type ReactFlowInstance,
-	ViewportPortal,
 	type Connection,
-	type Edge,
 	type EdgeChange,
-	type Node,
 	type NodeChange,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-	ArrowLeft,
-	ChevronLeft,
-	ChevronRight,
-	Circle,
-	Edit3,
-	MessageSquare,
-	MousePointer2,
-	Plus,
-	Save,
-	Trash2,
-} from "lucide-react";
-import {
-	useCallback,
-	useEffect,
-	memo,
-	useMemo,
-	useRef,
-	useState,
-	type CSSProperties,
-	type FormEvent,
-	type PointerEvent,
-} from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent } from "react";
+import { useParams } from "react-router-dom";
 import * as Y from "yjs";
 
 import { crdtApi, diagramApi } from "../api/endpoints";
-import type { CrdtUpdateDto, CrdtUpdatesResponseDto, PresenceCursorDto } from "../api/types";
+import type { CrdtUpdatesResponseDto, PresenceCursorDto } from "../api/types";
+import { DiagramCanvas } from "../components/editor/DiagramCanvas";
+import { DiagramEditorPanel } from "../components/editor/DiagramEditorPanel";
+import { CommentNode, DiagramComponentNode } from "../components/editor/DiagramNodes";
+import {
+	COMMENT_DEFAULT_SIZE,
+	INITIAL_UPDATE_COMPACTION_THRESHOLD,
+	INIT_ORIGIN,
+	LOCAL_ORIGIN,
+	PROTOCOL_PRESETS,
+	REMOTE_ORIGIN,
+	clampCommentSize,
+	commentNodeDataMatches,
+	commentSizesEqual,
+	encodeCompactedSnapshot,
+	getFallbackCommentPosition,
+	getNodeChangeId,
+	isCommentNodeId,
+	makeDefaultEdges,
+	makeDefaultNodes,
+	positionsEqual,
+	snapNodePosition,
+	sortComments,
+	toArrayBuffer,
+	toFlowEdge,
+	toFlowNode,
+	toStoredEdge,
+	toStoredNode,
+	updateDtoToBytes,
+	type CommentSize,
+	type DiagramEdge,
+	type DiagramNode,
+	type FlowPosition,
+	type StoredComment,
+	type StoredEdge,
+	type StoredNode,
+	type SyncState,
+} from "../components/editor/diagramEditorModel";
+import { classNames } from "../components/ui/classNames";
 import { useSession } from "../hooks/useAuth";
 import { getErrorMessage } from "../utils/errors";
 import {
@@ -59,509 +64,7 @@ import {
 	reducePresenceConnections,
 	type PresenceConnection,
 } from "../utils/presence";
-
-type StoredNodeData = {
-	label: string;
-	kind: string;
-};
-
-type DiagramNodeData = StoredNodeData & {
-	text?: string;
-	authorName?: string;
-	createdAt?: string;
-	updatedAt?: string;
-	size?: CommentSize;
-	shouldFocus?: boolean;
-	onDelete?: (commentId: string) => void;
-	onFocusHandled?: (commentId: string) => void;
-	onResize?: (commentId: string, size: CommentSize) => void;
-	onTextChange?: (commentId: string, text: string) => void;
-};
-
-type DiagramNode = Node<DiagramNodeData>;
-type DiagramEdge = Edge;
-
-type StoredNode = {
-	id: string;
-	type?: string;
-	position: { x: number; y: number };
-	data: StoredNodeData;
-};
-
-type StoredEdge = {
-	id: string;
-	source: string;
-	target: string;
-	sourceHandle?: string;
-	targetHandle?: string;
-	type?: string;
-	label?: string;
-	animated?: boolean;
-};
-
-type StoredComment = {
-	id: string;
-	position?: { x: number; y: number };
-	size?: CommentSize;
-	text: string;
-	authorName: string;
-	authorUserId?: string;
-	createdAt: string;
-	updatedAt?: string;
-};
-
-type DiagramSharedMaps = {
-	nodes: Y.Map<StoredNode>;
-	edges: Y.Map<StoredEdge>;
-	comments: Y.Map<StoredComment>;
-};
-
-type SyncState = "loading" | "live" | "saving" | "offline" | "error";
-
-const INIT_ORIGIN = "init";
-const LOCAL_ORIGIN = "local";
-const REMOTE_ORIGIN = "remote";
-const NODE_SNAP_DISTANCE = 18;
-const COMMENT_DEFAULT_SIZE = { width: 246, height: 154 };
-const COMMENT_MIN_SIZE = { width: 190, height: 128 };
-const COMMENT_MAX_SIZE = { width: 460, height: 360 };
-const INITIAL_UPDATE_COMPACTION_THRESHOLD = 40;
-const NODE_KIND_PRESETS = [
-	"component",
-	"client",
-	"service",
-	"database",
-	"cache",
-	"queue",
-	"gateway",
-	"worker",
-	"external",
-] as const;
-const PROTOCOL_PRESETS = [
-	"HTTP",
-	"HTTPS",
-	"REST",
-	"RPC",
-	"gRPC",
-	"GraphQL",
-	"WebSocket",
-	"TCP",
-	"UDP",
-	"MQTT",
-	"AMQP",
-	"Kafka",
-	"NATS",
-	"SQS",
-	"JDBC",
-	"ODBC",
-	"SSH",
-	"SMTP",
-] as const;
-
-type FlowPosition = {
-	x: number;
-	y: number;
-};
-
-type CommentSize = {
-	width: number;
-	height: number;
-};
-
-function toStoredNode(node: DiagramNode): StoredNode {
-	return {
-		id: node.id,
-		type: node.type,
-		position: { x: node.position.x, y: node.position.y },
-		data: {
-			label: String(node.data.label || "Node"),
-			kind: String(node.data.kind || "component"),
-		},
-	};
-}
-
-function toFlowNode(node: StoredNode): DiagramNode {
-	return {
-		id: node.id,
-		type: node.type ?? "default",
-		position: node.position,
-		data: node.data,
-	};
-}
-
-function toStoredEdge(edge: DiagramEdge): StoredEdge {
-	return {
-		id: edge.id,
-		source: edge.source,
-		target: edge.target,
-		sourceHandle: edge.sourceHandle ?? undefined,
-		targetHandle: edge.targetHandle ?? undefined,
-		type: edge.type,
-		label: typeof edge.label === "string" ? edge.label : undefined,
-		animated: edge.animated,
-	};
-}
-
-function toFlowEdge(edge: StoredEdge): DiagramEdge {
-	return {
-		id: edge.id,
-		source: edge.source,
-		target: edge.target,
-		sourceHandle: edge.sourceHandle,
-		targetHandle: edge.targetHandle,
-		type: edge.type ?? "smoothstep",
-		label: edge.label,
-		animated: edge.animated,
-	};
-}
-
-function sortComments(comments: StoredComment[]) {
-	return [...comments].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
-}
-
-function formatCommentTimestamp(value: string) {
-	const date = new Date(value);
-
-	if (Number.isNaN(date.getTime())) {
-		return "Just now";
-	}
-
-	return date.toLocaleString([], {
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-}
-
-function isCommentNodeId(nodeId: string) {
-	return nodeId.startsWith("comment-");
-}
-
-function getNodeChangeId(change: NodeChange<DiagramNode>) {
-	return change.type === "add" ? change.item.id : change.id;
-}
-
-function getFallbackCommentPosition(index: number) {
-	return { x: 260 + index * 28, y: 180 + index * 24 };
-}
-
-function clampValue(value: number, min: number, max: number) {
-	return Math.max(min, Math.min(max, value));
-}
-
-function clampCommentSize(size: CommentSize) {
-	return {
-		width: clampValue(size.width, COMMENT_MIN_SIZE.width, COMMENT_MAX_SIZE.width),
-		height: clampValue(size.height, COMMENT_MIN_SIZE.height, COMMENT_MAX_SIZE.height),
-	};
-}
-
-function positionsEqual(left: FlowPosition | undefined, right: FlowPosition) {
-	return Boolean(left && left.x === right.x && left.y === right.y);
-}
-
-function commentSizesEqual(left: CommentSize | undefined, right: CommentSize | undefined) {
-	const leftSize = left ?? COMMENT_DEFAULT_SIZE;
-	const rightSize = right ?? COMMENT_DEFAULT_SIZE;
-
-	return leftSize.width === rightSize.width && leftSize.height === rightSize.height;
-}
-
-function commentNodeDataMatches(
-	data: DiagramNodeData,
-	comment: StoredComment,
-	size: CommentSize,
-	shouldFocus: boolean,
-) {
-	return (
-		data.text === comment.text &&
-		data.authorName === comment.authorName &&
-		data.createdAt === comment.createdAt &&
-		data.updatedAt === comment.updatedAt &&
-		data.shouldFocus === shouldFocus &&
-		commentSizesEqual(data.size, size)
-	);
-}
-
-function areDiagramComponentNodePropsEqual(
-	previous: NodeProps<Node<DiagramNodeData, "default">>,
-	next: NodeProps<Node<DiagramNodeData, "default">>,
-) {
-	return (
-		previous.selected === next.selected &&
-		previous.data.label === next.data.label &&
-		previous.data.kind === next.data.kind
-	);
-}
-
-function areCommentNodePropsEqual(
-	previous: NodeProps<Node<DiagramNodeData, "comment">>,
-	next: NodeProps<Node<DiagramNodeData, "comment">>,
-) {
-	return (
-		previous.selected === next.selected &&
-		previous.data.text === next.data.text &&
-		previous.data.authorName === next.data.authorName &&
-		previous.data.createdAt === next.data.createdAt &&
-		previous.data.updatedAt === next.data.updatedAt &&
-		previous.data.shouldFocus === next.data.shouldFocus &&
-		commentSizesEqual(previous.data.size, next.data.size)
-	);
-}
-
-function snapNodePosition(nodeId: string, position: FlowPosition, currentNodes: DiagramNode[]) {
-	let snappedX = position.x;
-	let snappedY = position.y;
-	let closestXDistance = NODE_SNAP_DISTANCE + 1;
-	let closestYDistance = NODE_SNAP_DISTANCE + 1;
-
-	for (const node of currentNodes) {
-		if (node.id === nodeId || isCommentNodeId(node.id)) {
-			continue;
-		}
-
-		const xDistance = Math.abs(node.position.x - position.x);
-		const yDistance = Math.abs(node.position.y - position.y);
-
-		if (xDistance <= NODE_SNAP_DISTANCE && xDistance < closestXDistance) {
-			snappedX = node.position.x;
-			closestXDistance = xDistance;
-		}
-
-		if (yDistance <= NODE_SNAP_DISTANCE && yDistance < closestYDistance) {
-			snappedY = node.position.y;
-			closestYDistance = yDistance;
-		}
-	}
-
-	return { x: snappedX, y: snappedY };
-}
-
-const DiagramComponentNode = memo(function DiagramComponentNode({
-	data,
-	selected,
-}: NodeProps<Node<DiagramNodeData, "default">>) {
-	return (
-		<div className={`diagram-component-node${selected ? " selected" : ""}`}>
-			<Handle
-				id="top-source"
-				type="source"
-				position={Position.Top}
-				className="node-handle source"
-				style={{ left: "42%" }}
-			/>
-			<Handle
-				id="top-target"
-				type="target"
-				position={Position.Top}
-				className="node-handle target"
-				style={{ left: "58%" }}
-			/>
-			<Handle
-				id="right-source"
-				type="source"
-				position={Position.Right}
-				className="node-handle source"
-				style={{ top: "42%" }}
-			/>
-			<Handle
-				id="right-target"
-				type="target"
-				position={Position.Right}
-				className="node-handle target"
-				style={{ top: "58%" }}
-			/>
-			<Handle
-				id="bottom-source"
-				type="source"
-				position={Position.Bottom}
-				className="node-handle source"
-				style={{ left: "42%" }}
-			/>
-			<Handle
-				id="bottom-target"
-				type="target"
-				position={Position.Bottom}
-				className="node-handle target"
-				style={{ left: "58%" }}
-			/>
-			<Handle
-				id="left-source"
-				type="source"
-				position={Position.Left}
-				className="node-handle source"
-				style={{ top: "42%" }}
-			/>
-			<Handle
-				id="left-target"
-				type="target"
-				position={Position.Left}
-				className="node-handle target"
-				style={{ top: "58%" }}
-			/>
-			<span>{data.kind}</span>
-			<strong>{data.label}</strong>
-		</div>
-	);
-}, areDiagramComponentNodePropsEqual);
-
-const CommentNode = memo(function CommentNode({ id, data, selected }: NodeProps<Node<DiagramNodeData, "comment">>) {
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-	const focusHandledRef = useRef(false);
-	const size = clampCommentSize(data.size ?? COMMENT_DEFAULT_SIZE);
-	const timestamp = data.updatedAt ?? data.createdAt ?? new Date().toISOString();
-
-	function handleResizeStart(event: PointerEvent<HTMLSpanElement>) {
-		event.preventDefault();
-		event.stopPropagation();
-
-		const startX = event.clientX;
-		const startY = event.clientY;
-		const startWidth = size.width;
-		const startHeight = size.height;
-
-		function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-			data.onResize?.(
-				id,
-				clampCommentSize({
-					width: startWidth + moveEvent.clientX - startX,
-					height: startHeight + moveEvent.clientY - startY,
-				}),
-			);
-		}
-
-		function handlePointerUp() {
-			window.removeEventListener("pointermove", handlePointerMove);
-			window.removeEventListener("pointerup", handlePointerUp);
-		}
-
-		window.addEventListener("pointermove", handlePointerMove);
-		window.addEventListener("pointerup", handlePointerUp);
-	}
-
-	useEffect(() => {
-		if (!data.shouldFocus) {
-			focusHandledRef.current = false;
-			return;
-		}
-
-		if (focusHandledRef.current) {
-			return;
-		}
-
-		focusHandledRef.current = true;
-		textareaRef.current?.focus();
-		data.onFocusHandled?.(id);
-	}, [data.onFocusHandled, data.shouldFocus, id]);
-
-	return (
-		<article
-			className={`diagram-comment-node${selected ? " selected" : ""}`}
-			style={{ width: size.width, height: size.height }}
-		>
-			<header className="comment-node-header">
-				<div>
-					<strong>{data.authorName ?? "Collaborator"}</strong>
-					<time dateTime={timestamp}>{formatCommentTimestamp(timestamp)}</time>
-				</div>
-				<button
-					className="icon-button danger compact-icon-button nodrag nopan"
-					type="button"
-					onClick={(event) => {
-						event.stopPropagation();
-						data.onDelete?.(id);
-					}}
-					aria-label="Delete comment"
-					title="Delete comment"
-				>
-					<Trash2 size={14} />
-				</button>
-			</header>
-			<textarea
-				ref={textareaRef}
-				className="comment-node-textarea nodrag nopan"
-				value={data.text ?? ""}
-				onChange={(event) => data.onTextChange?.(id, event.target.value)}
-				onPointerDown={(event) => event.stopPropagation()}
-				placeholder="Comment"
-			/>
-			<span
-				className="comment-resize-handle nodrag nopan"
-				onPointerDown={handleResizeStart}
-				aria-label="Resize comment"
-			/>
-		</article>
-	);
-}, areCommentNodePropsEqual);
-
-function makeDefaultNodes(): StoredNode[] {
-	return [
-		{
-			id: "node-client",
-			type: "default",
-			position: { x: 80, y: 140 },
-			data: { label: "Client app", kind: "client" },
-		},
-		{
-			id: "node-api",
-			type: "default",
-			position: { x: 360, y: 140 },
-			data: { label: "Backend API", kind: "service" },
-		},
-	];
-}
-
-function makeDefaultEdges(): StoredEdge[] {
-	return [
-		{
-			id: "edge-client-api",
-			source: "node-client",
-			target: "node-api",
-			type: "smoothstep",
-			label: "HTTPS",
-		},
-	];
-}
-
-function decodeBase64(value: string) {
-	const binary = atob(value);
-	const bytes = new Uint8Array(binary.length);
-
-	for (let index = 0; index < binary.length; index += 1) {
-		bytes[index] = binary.charCodeAt(index);
-	}
-
-	return bytes;
-}
-
-function updateDtoToBytes(update: CrdtUpdateDto) {
-	return decodeBase64(update.updateBase64);
-}
-
-function toArrayBuffer(bytes: Uint8Array) {
-	const copy = new Uint8Array(bytes.byteLength);
-	copy.set(bytes);
-	return copy.buffer;
-}
-
-function encodeCompactedSnapshot(sourceMaps: DiagramSharedMaps) {
-	const compactedDoc = new Y.Doc();
-	const compactedNodes = compactedDoc.getMap<StoredNode>("nodes");
-	const compactedEdges = compactedDoc.getMap<StoredEdge>("edges");
-	const compactedComments = compactedDoc.getMap<StoredComment>("comments");
-	compactedDoc.getMap("docs");
-
-	compactedDoc.transact(() => {
-		sourceMaps.nodes.forEach((node, nodeId) => compactedNodes.set(nodeId, node));
-		sourceMaps.edges.forEach((edge, edgeId) => compactedEdges.set(edgeId, edge));
-		sourceMaps.comments.forEach((comment, commentId) => compactedComments.set(commentId, comment));
-	}, INIT_ORIGIN);
-
-	const snapshot = Y.encodeStateAsUpdate(compactedDoc);
-	compactedDoc.destroy();
-	return snapshot;
-}
+import styles from "./DiagramEditorPage.module.css";
 
 export function DiagramEditorPage() {
 	const { workspaceId = "", projectId = "", diagramId = "" } = useParams();
@@ -1664,10 +1167,53 @@ export function DiagramEditorPage() {
 		setEdgeLabelDraft(typeof selectedEdge?.label === "string" ? selectedEdge.label : "");
 	}, [selectedEdge?.id, selectedEdge?.label]);
 
+	function handleNodeLabelBlur() {
+		if (!selectedNode) {
+			return;
+		}
+
+		const nextLabel = nodeLabelDraft.trim();
+
+		if (nextLabel && nextLabel !== selectedNode.data.label) {
+			updateNodeLabel(selectedNode.id, nextLabel);
+		}
+	}
+
+	function handleNodeKindChange(kind: string) {
+		if (selectedNode) {
+			updateNodeKind(selectedNode.id, kind);
+		}
+	}
+
+	function handleRemoveSelectedNode() {
+		if (selectedNode) {
+			removeNode(selectedNode.id);
+		}
+	}
+
+	function handleEdgeProtocolChange(nextValue: string) {
+		if (!selectedEdge) {
+			return;
+		}
+
+		if (nextValue === "custom") {
+			setEdgeLabelDraft(typeof selectedEdge.label === "string" ? selectedEdge.label : "");
+			return;
+		}
+
+		updateEdgeLabel(selectedEdge.id, nextValue);
+	}
+
+	function handleRemoveSelectedEdge() {
+		if (selectedEdge) {
+			removeEdge(selectedEdge.id);
+		}
+	}
+
 	return (
-		<div className={`editor-page fullscreen-editor-page${hasEditorStatus ? " has-editor-status" : ""}`}>
+		<div className={classNames(styles.page, hasEditorStatus && styles.withStatus)}>
 			{hasEditorStatus ?
-				<div className="editor-status-row fullscreen-status-row">
+				<div className={styles.statusRow}>
 					{snapshotQuery.isError ?
 						<span className="muted-copy">Snapshot: {getErrorMessage(snapshotQuery.error)}</span>
 					:	null}
@@ -1683,290 +1229,89 @@ export function DiagramEditorPage() {
 				</div>
 			:	null}
 
-			<div className={`editor-workspace${isSidePanelCollapsed ? " side-panel-collapsed" : ""}`}>
-				<div className="editor-canvas-frame" ref={canvasFrameRef}>
-					<section className="canvas-shell fullscreen-canvas-shell" aria-label="Diagram canvas">
-						<ReactFlow
-							nodes={flowNodes}
-							edges={edges}
-							nodeTypes={nodeTypes}
-							onInit={(instance) => {
-								reactFlowInstanceRef.current = instance;
-							}}
-							onNodesChange={onNodesChange}
-							onEdgesChange={onEdgesChange}
-							onConnect={onConnect}
-							onReconnect={onReconnect}
-							onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
-								const selectedDiagramNode = selectedNodes.find((node) => !isCommentNodeId(node.id));
-								const selectedDiagramEdge = selectedEdges[0];
+			<div className={classNames(styles.workspace, isSidePanelCollapsed && styles.withCollapsedPanel)}>
+				<DiagramCanvas
+					frameRef={canvasFrameRef}
+					nodes={flowNodes}
+					edges={edges}
+					nodeTypes={nodeTypes}
+					onInit={(instance) => {
+						reactFlowInstanceRef.current = instance;
+					}}
+					onNodesChange={onNodesChange}
+					onEdgesChange={onEdgesChange}
+					onConnect={onConnect}
+					onReconnect={onReconnect}
+					onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
+						const selectedDiagramNode = selectedNodes.find((node) => !isCommentNodeId(node.id));
+						const selectedDiagramEdge = selectedEdges[0];
 
-								if (selectedDiagramNode) {
-									setSelectedNodeId(selectedDiagramNode.id);
-									setSelectedEdgeId(null);
-									return;
-								}
+						if (selectedDiagramNode) {
+							setSelectedNodeId(selectedDiagramNode.id);
+							setSelectedEdgeId(null);
+							return;
+						}
 
-								setSelectedNodeId(null);
-								setSelectedEdgeId(selectedDiagramEdge?.id ?? null);
-							}}
-							onNodeDragStop={(_, node) => {
-								if (isCommentNodeId(node.id)) {
-									persistCommentPosition(node.id, node.position);
-									return;
-								}
+						setSelectedNodeId(null);
+						setSelectedEdgeId(selectedDiagramEdge?.id ?? null);
+					}}
+					onNodeDragStop={(_, node) => {
+						if (isCommentNodeId(node.id)) {
+							persistCommentPosition(node.id, node.position);
+							return;
+						}
 
-								persistNodePosition(node.id, node.position);
-							}}
-							edgesReconnectable
-							onPaneClick={(event) => {
-								if (event.detail !== 2) {
-									return;
-								}
+						persistNodePosition(node.id, node.position);
+					}}
+					onPaneClick={(event) => {
+						if (event.detail !== 2) {
+							return;
+						}
 
-								const reactFlowInstance = reactFlowInstanceRef.current;
+						const reactFlowInstance = reactFlowInstanceRef.current;
 
-								if (!reactFlowInstance) {
-									addComment();
-									return;
-								}
+						if (!reactFlowInstance) {
+							addComment();
+							return;
+						}
 
-								addComment(
-									reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-								);
-							}}
-							onPointerMove={handleEditorPointerMove}
-							onPointerLeave={handleEditorPointerLeave}
-							deleteKeyCode={["Backspace", "Delete"]}
-							fitView
-							minZoom={0.2}
-							maxZoom={1.8}
-						>
-							<ViewportPortal>
-								{remoteCursorConnections.map((connection) => {
-									const cursor = connection.cursor;
+						addComment(reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+					}}
+					onPointerMove={handleEditorPointerMove}
+					onPointerLeave={handleEditorPointerLeave}
+					remoteCursorConnections={remoteCursorConnections}
+				/>
 
-									if (!cursor) {
-										return null;
-									}
-
-									return (
-										<div
-											key={connection.connectionId}
-											className="remote-cursor"
-											style={
-												{
-													"--cursor-color": connection.color,
-													transform: `translate(${cursor.x}px, ${cursor.y}px)`,
-												} as CSSProperties
-											}
-										>
-											<MousePointer2
-												size={22}
-												fill="var(--cursor-color)"
-												stroke="var(--cursor-color)"
-											/>
-											<span>{connection.name}</span>
-										</div>
-									);
-								})}
-							</ViewportPortal>
-							<Background gap={18} color="#c8d3cf" />
-							<Controls />
-							<MiniMap pannable zoomable />
-						</ReactFlow>
-					</section>
-				</div>
-
-				<aside
-					className={`editor-side-panel diagram-editor-panel${isSidePanelCollapsed ? " collapsed" : ""}`}
-					aria-label="Diagram editor tools"
-				>
-					{isSidePanelCollapsed ?
-						<button
-							className="icon-button panel-collapse-button"
-							type="button"
-							onClick={() => setIsSidePanelCollapsed(false)}
-							aria-label="Expand side panel"
-							title="Expand side panel"
-						>
-							<ChevronLeft size={17} />
-						</button>
-					:	<>
-							<section className="panel-section" aria-labelledby="editor-panel-status-title">
-								<div className="panel-section-heading">
-									<div className="panel-title">
-										<Circle size={15} />
-										<h2 id="editor-panel-status-title">Status</h2>
-									</div>
-									<button
-										className="icon-button panel-collapse-button"
-										type="button"
-										onClick={() => setIsSidePanelCollapsed(true)}
-										aria-label="Collapse side panel"
-										title="Collapse side panel"
-									>
-										<ChevronRight size={17} />
-									</button>
-								</div>
-								<div className="metric-grid editor-metric-grid">
-									<span>Sync</span>
-									<strong className={`sync-label ${syncState}`}>{syncState}</strong>
-									<span>Active users</span>
-									<strong>{editorUsers.length}</strong>
-									<span>Nodes</span>
-									<strong>{nodes.length}</strong>
-									<span>Comments</span>
-									<strong>{comments.length}</strong>
-								</div>
-								<div className="panel-actions">
-									<Link
-										className="secondary-button"
-										to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}`}
-									>
-										<ArrowLeft size={16} />
-										<span>Details</span>
-									</Link>
-									<button className="secondary-button" type="button" onClick={addNode}>
-										<Plus size={16} />
-										<span>Node</span>
-									</button>
-									<button className="secondary-button" type="button" onClick={() => addComment()}>
-										<MessageSquare size={16} />
-										<span>Comment</span>
-									</button>
-									<button
-										className="primary-button"
-										type="button"
-										onClick={() => saveSnapshot.mutate()}
-										disabled={saveSnapshot.isPending}
-									>
-										<Save size={16} />
-										<span>Snapshot</span>
-									</button>
-								</div>
-							</section>
-
-							<section className="panel-section" aria-labelledby="node-inspector-title">
-								<div className="panel-title">
-									<Edit3 size={15} />
-									<h2 id="node-inspector-title">Node</h2>
-								</div>
-								{selectedNode ?
-									<form className="edit-form" onSubmit={handleRenameNode}>
-										<label>
-											<span>Name</span>
-											<input
-												value={nodeLabelDraft}
-												onChange={(event) => setNodeLabelDraft(event.target.value)}
-												onBlur={() => {
-													const nextLabel = nodeLabelDraft.trim();
-
-													if (nextLabel && nextLabel !== selectedNode.data.label) {
-														updateNodeLabel(selectedNode.id, nextLabel);
-													}
-												}}
-											/>
-										</label>
-										<label>
-											<span>Type</span>
-											<select
-												value={selectedNode.data.kind}
-												onChange={(event) =>
-													updateNodeKind(selectedNode.id, event.target.value)
-												}
-											>
-												{NODE_KIND_PRESETS.map((kind) => (
-													<option key={kind} value={kind}>
-														{kind}
-													</option>
-												))}
-											</select>
-										</label>
-										<div className="node-meta">
-											<span>{selectedNode.data.kind}</span>
-										</div>
-										<button
-											className="secondary-button"
-											type="submit"
-											disabled={!nodeLabelDraft.trim()}
-										>
-											<Save size={15} />
-											<span>Save name</span>
-										</button>
-										<button
-											className="secondary-button danger-button"
-											type="button"
-											onClick={() => removeNode(selectedNode.id)}
-										>
-											<Trash2 size={15} />
-											<span>Delete node</span>
-										</button>
-									</form>
-								:	<div className="empty-panel-state">Select a node to rename it.</div>}
-							</section>
-
-							<section className="panel-section" aria-labelledby="edge-inspector-title">
-								<div className="panel-title">
-									<Edit3 size={15} />
-									<h2 id="edge-inspector-title">Arrow</h2>
-								</div>
-								{selectedEdge ?
-									<form className="edit-form" onSubmit={handleRenameEdge}>
-										<label>
-											<span>Protocol</span>
-											<select
-												value={selectedProtocolValue}
-												onChange={(event) => {
-													const nextValue = event.target.value;
-
-													if (nextValue === "custom") {
-														setEdgeLabelDraft(
-															typeof selectedEdge.label === "string" ?
-																selectedEdge.label
-															:	"",
-														);
-														return;
-													}
-
-													updateEdgeLabel(selectedEdge.id, nextValue);
-												}}
-											>
-												<option value="">No label</option>
-												{PROTOCOL_PRESETS.map((protocol) => (
-													<option key={protocol} value={protocol}>
-														{protocol}
-													</option>
-												))}
-												<option value="custom">Custom</option>
-											</select>
-										</label>
-										<label>
-											<span>Custom label</span>
-											<input
-												value={edgeLabelDraft}
-												onChange={(event) => setEdgeLabelDraft(event.target.value)}
-												placeholder="HTTPS, RPC, Kafka"
-											/>
-										</label>
-										<button className="secondary-button" type="submit">
-											<Save size={15} />
-											<span>Save label</span>
-										</button>
-										<button
-											className="secondary-button danger-button"
-											type="button"
-											onClick={() => removeEdge(selectedEdge.id)}
-										>
-											<Trash2 size={15} />
-											<span>Disconnect arrow</span>
-										</button>
-									</form>
-								:	<div className="empty-panel-state">Select an arrow to change its label.</div>}
-							</section>
-						</>
-					}
-				</aside>
+				<DiagramEditorPanel
+					isCollapsed={isSidePanelCollapsed}
+					workspaceId={workspaceId}
+					projectId={projectId}
+					diagramId={diagramId}
+					syncState={syncState}
+					activeUserCount={editorUsers.length}
+					nodeCount={nodes.length}
+					commentCount={comments.length}
+					isSavingSnapshot={saveSnapshot.isPending}
+					selectedNode={selectedNode}
+					nodeLabelDraft={nodeLabelDraft}
+					selectedEdge={selectedEdge}
+					edgeLabelDraft={edgeLabelDraft}
+					selectedProtocolValue={selectedProtocolValue}
+					onCollapse={() => setIsSidePanelCollapsed(true)}
+					onExpand={() => setIsSidePanelCollapsed(false)}
+					onAddNode={addNode}
+					onAddComment={() => addComment()}
+					onSaveSnapshot={() => saveSnapshot.mutate()}
+					onRenameNode={handleRenameNode}
+					onNodeLabelDraftChange={setNodeLabelDraft}
+					onNodeLabelBlur={handleNodeLabelBlur}
+					onNodeKindChange={handleNodeKindChange}
+					onRemoveNode={handleRemoveSelectedNode}
+					onRenameEdge={handleRenameEdge}
+					onEdgeProtocolChange={handleEdgeProtocolChange}
+					onEdgeLabelDraftChange={setEdgeLabelDraft}
+					onRemoveEdge={handleRemoveSelectedEdge}
+				/>
 			</div>
 		</div>
 	);

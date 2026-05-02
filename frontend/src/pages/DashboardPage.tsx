@@ -1,9 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderKanban, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 
 import { workspaceApi } from "../api/endpoints";
+import {
+	Button,
+	ButtonLink,
+	ErrorPanel,
+	FormError,
+	FormField,
+	InlineForm,
+	PageHeader,
+	ResourceCard,
+	ResourceCardBody,
+	ResourceGrid,
+	ToolPanel,
+} from "../components/ui";
 import { getErrorMessage } from "../utils/errors";
 
 export function DashboardPage() {
@@ -39,82 +51,74 @@ export function DashboardPage() {
 
 	return (
 		<div className="page-stack">
-			<div className="page-heading">
-				<div>
-					<span className="eyebrow">Dashboard</span>
-					<h1>Workspaces</h1>
-				</div>
-				<div className="page-actions">
-					<span className="meta-pill">{workspacesQuery.data?.length ?? 0} workspaces</span>
-				</div>
-			</div>
+			<PageHeader
+				eyebrow="Dashboard"
+				title="Workspaces"
+				actions={<span className="meta-pill">{workspacesQuery.data?.length ?? 0} workspaces</span>}
+			/>
 
-			<section className="tool-panel" aria-labelledby="new-workspace-title">
+			<ToolPanel aria-labelledby="new-workspace-title">
 				<div>
 					<h2 id="new-workspace-title">New workspace</h2>
 					<p className="muted-copy">Create a bounded area for projects, diagrams, and collaborators.</p>
 				</div>
-				<form className="inline-form" onSubmit={handleCreateWorkspace}>
-					<label>
-						<span>Name</span>
+				<InlineForm onSubmit={handleCreateWorkspace}>
+					<FormField label="Name">
 						<input
 							value={name}
 							onChange={(event) => setName(event.target.value)}
 							placeholder="Platform redesign"
 						/>
-					</label>
-					<button
-						className="primary-button"
-						type="submit"
-						disabled={!name.trim() || createWorkspace.isPending}
-					>
+					</FormField>
+					<Button variant="primary" type="submit" disabled={!name.trim() || createWorkspace.isPending}>
 						<Plus size={16} />
 						<span>Create</span>
-					</button>
-				</form>
+					</Button>
+				</InlineForm>
 				{createWorkspace.isError ?
-					<p className="form-error">{getErrorMessage(createWorkspace.error)}</p>
+					<FormError>{getErrorMessage(createWorkspace.error)}</FormError>
 				:	null}
-			</section>
+			</ToolPanel>
 
 			{workspacesQuery.isError ?
-				<div className="error-panel">{getErrorMessage(workspacesQuery.error)}</div>
+				<ErrorPanel>{getErrorMessage(workspacesQuery.error)}</ErrorPanel>
 			:	null}
 
-			<section className="resource-grid" aria-label="Workspace list">
-				{workspacesQuery.isPending ?
-					<div className="status-panel">Loading workspaces...</div>
-				:	null}
-				{workspacesQuery.data?.length === 0 ?
-					<div className="status-panel">No workspaces yet.</div>
-				:	null}
+			<ResourceGrid
+				aria-label="Workspace list"
+				isLoading={workspacesQuery.isPending}
+				loadingMessage="Loading workspaces..."
+				isEmpty={workspacesQuery.data?.length === 0}
+				emptyMessage="No workspaces yet."
+			>
 				{workspacesQuery.data?.map((workspace) => (
-					<article className="resource-card" key={workspace.id}>
-						<div className="card-icon">
-							<FolderKanban size={18} />
-						</div>
-						<div className="resource-card-body">
+					<ResourceCard
+						key={workspace.id}
+						icon={<FolderKanban size={18} />}
+						actions={
+							<>
+								<ButtonLink to={`/workspaces/${workspace.id}`}>Open</ButtonLink>
+								<Button
+									variant="icon"
+									tone="danger"
+									type="button"
+									onClick={() => deleteWorkspace.mutate(workspace.id)}
+									aria-label={`Delete ${workspace.name}`}
+								>
+									<Trash2 size={16} />
+								</Button>
+							</>
+						}
+					>
+						<ResourceCardBody>
 							<h2>{workspace.name}</h2>
 							<p>{workspace.role ? `Role: ${workspace.role}` : "Workspace"}</p>
-						</div>
-						<div className="card-actions">
-							<Link className="secondary-button" to={`/workspaces/${workspace.id}`}>
-								Open
-							</Link>
-							<button
-								className="icon-button danger"
-								type="button"
-								onClick={() => deleteWorkspace.mutate(workspace.id)}
-								aria-label={`Delete ${workspace.name}`}
-							>
-								<Trash2 size={16} />
-							</button>
-						</div>
-					</article>
+						</ResourceCardBody>
+					</ResourceCard>
 				))}
-			</section>
+			</ResourceGrid>
 			{deleteWorkspace.isError ?
-				<p className="form-error">{getErrorMessage(deleteWorkspace.error)}</p>
+				<FormError>{getErrorMessage(deleteWorkspace.error)}</FormError>
 			:	null}
 		</div>
 	);

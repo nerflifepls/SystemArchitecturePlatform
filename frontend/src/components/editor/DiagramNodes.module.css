@@ -1,0 +1,185 @@
+.componentNode {
+	display: grid;
+	min-width: 148px;
+	max-width: 230px;
+	gap: 3px;
+	padding: 14px 18px;
+	border: 1px solid oklch(0.72 0.16 150 / 0.5);
+	border-radius: var(--border-radius-small);
+	background: linear-gradient(180deg, oklch(0.25 0.025 240), oklch(0.2 0.02 240));
+	box-shadow: 0 12px 30px oklch(0.05 0.02 240 / 0.36);
+	color: var(--text-main);
+	font-weight: 900;
+	text-align: center;
+}
+
+.componentNode.selected {
+	border-color: var(--primary-glow);
+	box-shadow:
+		0 0 0 2px oklch(0.72 0.16 150 / 0.2),
+		0 16px 34px oklch(0.05 0.02 240 / 0.42);
+}
+
+.componentNode span,
+.componentNode strong {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.componentNode span {
+	color: var(--text-sub);
+	font-size: 0.7rem;
+	letter-spacing: 0;
+	text-transform: uppercase;
+}
+
+.componentNode strong {
+	font-size: 0.92rem;
+}
+
+.nodeHandle {
+	width: 10px;
+	height: 10px;
+	border: 2px solid oklch(0.16 0.014 240);
+	background: var(--primary-glow);
+	opacity: 0.82;
+}
+
+.nodeHandle.target {
+	background: var(--secondary);
+}
+
+.componentNode:hover .nodeHandle,
+:global(.react-flow__node-default.selected) .nodeHandle {
+	opacity: 1;
+}
+
+.commentNode {
+	position: relative;
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	gap: 9px;
+	min-width: 190px;
+	min-height: 128px;
+	padding: 11px;
+	border: 1px solid oklch(0.72 0.16 150 / 0.44);
+	border-radius: var(--border-radius-small);
+	background: linear-gradient(180deg, oklch(0.22 0.025 240), oklch(0.18 0.02 240));
+	box-shadow: 0 16px 34px oklch(0.05 0.02 240 / 0.32);
+	color: var(--text-main);
+	overflow: hidden;
+	transform: translateZ(0);
+}
+
+.commentNode.selected {
+	border-color: var(--primary-glow);
+	box-shadow:
+		0 0 0 2px oklch(0.72 0.16 150 / 0.22),
+		0 18px 38px oklch(0.05 0.02 240 / 0.38);
+}
+
+.commentHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+}
+
+.commentHeader div {
+	display: grid;
+	gap: 1px;
+	min-width: 0;
+}
+
+.commentHeader strong,
+.commentHeader time {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.commentHeader strong {
+	font-size: 0.82rem;
+	font-weight: 900;
+}
+
+.commentHeader time {
+	color: var(--text-sub);
+	font-size: 0.72rem;
+	font-weight: 800;
+}
+
+.deleteButton {
+	width: 32px;
+	min-height: 32px;
+	border-color: var(--border);
+	background: var(--bg-input);
+	color: var(--text-sub);
+}
+
+.deleteButton:hover {
+	border-color: oklch(0.63 0.22 29 / 0.42);
+	background: oklch(0.63 0.22 29 / 0.14);
+	color: oklch(0.33 0.12 29);
+}
+
+.commentTextarea {
+	min-height: 0;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: 0.92rem;
+	font-weight: 700;
+	line-height: 1.38;
+	resize: none;
+}
+
+.commentTextarea:focus {
+	box-shadow: none;
+}
+
+.commentTextarea::placeholder {
+	color: oklch(0.7 0.03 240 / 0.64);
+}
+
+.resizeHandle {
+	position: absolute;
+	right: 5px;
+	bottom: 5px;
+	width: 14px;
+	height: 14px;
+	border-right: 2px solid oklch(0.72 0.16 150 / 0.64);
+	border-bottom: 2px solid oklch(0.72 0.16 150 / 0.64);
+	cursor: nwse-resize;
+	opacity: 0.82;
+}
+
+.resizeHandle:hover {
+	opacity: 1;
+}
+
+:global(.react-flow__node-default) {
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-main);
+	padding: 0;
+}
+
+:global(.react-flow__node-default.selected) {
+	box-shadow: none;
+}
+
+:global(.react-flow__node-comment) {
+	border: 0;
+	backface-visibility: hidden;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	will-change: transform;
+}

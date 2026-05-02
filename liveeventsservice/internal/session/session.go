@@ -1,3 +1,4 @@
+// Package session validates backend-issued Redis sessions for websocket clients.
 package session
 
 import (
@@ -17,6 +18,7 @@ var (
 	ErrInvalid  = errors.New("session is invalid")
 )
 
+// Session is the authenticated browser session used by a websocket connection.
 type Session struct {
 	ID         string
 	UserID     uuid.UUID
@@ -27,15 +29,18 @@ type Session struct {
 	LastSeenAt time.Time
 }
 
+// Store validates sessions against Redis session and active-user keys.
 type Store struct {
 	client *goredis.Client
 	now    func() time.Time
 }
 
+// NewStore creates a Redis-backed session store.
 func NewStore(client *goredis.Client) *Store {
 	return &Store{client: client, now: time.Now}
 }
 
+// Validate loads and checks a session id against the active user session key.
 func (store *Store) Validate(ctx context.Context, sessionID string) (Session, error) {
 	trimmedSessionID := strings.TrimSpace(sessionID)
 	if trimmedSessionID == "" {
@@ -75,6 +80,7 @@ func (store *Store) Validate(ctx context.Context, sessionID string) (Session, er
 	return session, nil
 }
 
+// ParseSessionFields converts Redis hash fields into a Session value.
 func ParseSessionFields(values map[string]string, now time.Time) (Session, error) {
 	sessionID := strings.TrimSpace(values["session_id"])
 	if sessionID == "" {
@@ -114,10 +120,12 @@ func ParseSessionFields(values map[string]string, now time.Time) (Session, error
 	}, nil
 }
 
+// SessionKey returns the Redis hash key for a backend browser session.
 func SessionKey(sessionID string) string {
 	return "session:" + sessionID
 }
 
+// UserSessionKey returns the Redis key containing the active session id for a user.
 func UserSessionKey(userID uuid.UUID) string {
 	return "user:" + userID.String() + ":session"
 }

@@ -1,4 +1,4 @@
-package api
+package response
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ type errorPayload struct {
 	RequestID string `json:"requestId"`
 }
 
-func writeJSON(writer http.ResponseWriter, statusCode int, payload any) {
+func WriteJSON(writer http.ResponseWriter, statusCode int, payload any) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(statusCode)
 	if payload == nil {
@@ -30,12 +30,12 @@ func writeJSON(writer http.ResponseWriter, statusCode int, payload any) {
 	_ = json.NewEncoder(writer).Encode(payload)
 }
 
-func writeError(writer http.ResponseWriter, request *http.Request, err error) {
+func WriteError(writer http.ResponseWriter, request *http.Request, err error) {
 	var serviceError *services.Error
 	if !errors.As(err, &serviceError) {
 		serviceError = services.Internal("unexpected error")
 	}
-	writeJSON(writer, serviceError.Status, errorBody{Error: errorPayload{
+	WriteJSON(writer, serviceError.Status, errorBody{Error: errorPayload{
 		Code:      serviceError.Code,
 		Message:   serviceError.Message,
 		Details:   serviceError.Details,
@@ -43,7 +43,7 @@ func writeError(writer http.ResponseWriter, request *http.Request, err error) {
 	}})
 }
 
-func decodeJSON(request *http.Request, payload any) error {
+func DecodeJSON(request *http.Request, payload any) error {
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
 	if decodeErr := decoder.Decode(payload); decodeErr != nil {

@@ -1,9 +1,11 @@
-package api
+package handlers
 
 import (
 	"net/http"
 	"strings"
 
+	apirequest "backend/api/request"
+	"backend/api/response"
 	"backend/services"
 
 	"github.com/google/uuid"
@@ -26,23 +28,27 @@ type internalAuthorizeDiagram struct {
 	WorkspaceID string `json:"workspaceId"`
 }
 
+func NewInternalHandler(diagramService *services.DiagramService) InternalHandler {
+	return InternalHandler{diagrams: diagramService}
+}
+
 func (handler InternalHandler) AuthorizeDiagram(writer http.ResponseWriter, request *http.Request) {
-	diagramID, parseErr := parseUUIDParam(request, "diagramId")
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
 	if parseErr != nil {
-		writeError(writer, request, parseErr)
+		response.WriteError(writer, request, parseErr)
 		return
 	}
 	userID, userParseErr := uuid.Parse(strings.TrimSpace(request.URL.Query().Get("userId")))
 	if userParseErr != nil {
-		writeError(writer, request, services.BadRequest("userId must be a valid UUID"))
+		response.WriteError(writer, request, services.BadRequest("userId must be a valid UUID"))
 		return
 	}
 	access, accessErr := handler.diagrams.AuthorizeInternal(request.Context(), diagramID, userID)
 	if accessErr != nil {
-		writeError(writer, request, accessErr)
+		response.WriteError(writer, request, accessErr)
 		return
 	}
-	writeJSON(writer, http.StatusOK, internalAuthorizeResponse{
+	response.WriteJSON(writer, http.StatusOK, internalAuthorizeResponse{
 		Allowed: access.Allowed,
 		Role:    string(access.Role),
 		Diagram: internalAuthorizeDiagram{ID: access.DiagramID.String(), ProjectID: access.ProjectID.String(), WorkspaceID: access.WorkspaceID.String()},

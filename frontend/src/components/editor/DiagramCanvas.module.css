@@ -1,0 +1,100 @@
+.frame {
+	display: grid;
+	min-width: 0;
+	min-height: 0;
+}
+
+.shell {
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+	border: 0;
+	border-radius: 0;
+	background: oklch(0.16 0.014 240);
+	box-shadow: none;
+	overflow: hidden;
+}
+
+.remoteCursor {
+	position: absolute;
+	z-index: 12;
+	display: flex;
+	align-items: flex-start;
+	gap: 5px;
+	filter: drop-shadow(0 8px 14px oklch(0.04 0.02 240 / 0.42));
+	pointer-events: none;
+	transform-origin: 0 0;
+}
+
+.remoteCursor svg {
+	flex: 0 0 auto;
+	stroke-width: 2.6;
+}
+
+.remoteCursor span {
+	max-width: 180px;
+	margin: 14px 0 0 -2px;
+	padding: 4px 8px;
+	border: 1px solid color-mix(in srgb, var(--cursor-color) 82%, white 18%);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--cursor-color) 26%, oklch(0.14 0.012 240) 74%);
+	color: var(--text-main);
+	font-size: 0.78rem;
+	font-weight: 900;
+	line-height: 1.15;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+:global(.react-flow) {
+	background: linear-gradient(135deg, oklch(0.72 0.16 150 / 0.08), transparent 34%), oklch(0.155 0.014 240);
+}
+
+:global(.react-flow__edge-path) {
+	stroke: var(--primary);
+	stroke-width: 2;
+}
+
+:global(.react-flow__edge-textbg) {
+	fill: var(--bg-input);
+}
+
+:global(.react-flow__edge-text) {
+	fill: var(--text-main);
+	font-weight: 800;
+}
+
+:global(.react-flow__controls) {
+	border: 1px solid var(--border);
+	border-radius: var(--border-radius-small);
+	box-shadow: var(--shadow-tight);
+	overflow: hidden;
+}
+
+:global(.react-flow__controls-button) {
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-input);
+	color: var(--text-main);
+}
+
+:global(.react-flow__controls-button:hover) {
+	background: var(--bg-hover);
+}
+
+:global(.react-flow__controls-button svg) {
+	fill: currentColor;
+}
+
+:global(.react-flow__minimap) {
+	border: 1px solid var(--border);
+	border-radius: var(--border-radius-small);
+	background: var(--bg-card);
+	box-shadow: var(--shadow-tight);
+}
+
+@media (max-width: 640px) {
+	.remoteCursor span {
+		max-width: 124px;
+	}
+}

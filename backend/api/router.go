@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"backend/api/handlers"
+	"backend/api/httpmw"
+	"backend/api/response"
 	"backend/config"
 	"backend/services"
 
@@ -25,26 +28,26 @@ func NewRouter(deps Dependencies) http.Handler {
 	router.Use(middleware.RealIP)
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
-	router.Use(corsMiddleware(deps.Config.FrontendOrigin))
+	router.Use(httpmw.CORS(deps.Config.FrontendOrigin))
 
 	router.HandleFunc("/", rootHandler)
 	router.HandleFunc("/healthz", healthHandler)
 
-	authHandler := AuthHandler{config: deps.Config, auth: deps.Auth}
-	workspaceHandler := WorkspaceHandler{workspaces: deps.Workspaces}
-	projectHandler := ProjectHandler{projects: deps.Projects}
-	diagramHandler := DiagramHandler{config: deps.Config, diagrams: deps.Diagrams}
-	internalHandler := InternalHandler{diagrams: deps.Diagrams}
+	authHandler := handlers.NewAuthHandler(deps.Config, deps.Auth)
+	workspaceHandler := handlers.NewWorkspaceHandler(deps.Workspaces)
+	projectHandler := handlers.NewProjectHandler(deps.Projects)
+	diagramHandler := handlers.NewDiagramHandler(deps.Config, deps.Diagrams)
+	internalHandler := handlers.NewInternalHandler(deps.Diagrams)
 
 	router.Route("/api/v1", func(apiRouter chi.Router) {
 		apiRouter.Get("/", func(writer http.ResponseWriter, request *http.Request) {
-			writeJSON(writer, http.StatusOK, map[string]string{"service": "backend", "version": "v1", "status": "ok"})
+			response.WriteJSON(writer, http.StatusOK, map[string]string{"service": "backend", "version": "v1", "status": "ok"})
 		})
 		apiRouter.Post("/auth/google", authHandler.Google)
 		apiRouter.Post("/auth/logout", authHandler.Logout)
 
 		apiRouter.Group(func(protectedRouter chi.Router) {
-			protectedRouter.Use(sessionMiddleware(deps.Auth, deps.Config))
+			protectedRouter.Use(httpmw.Session(deps.Auth, deps.Config))
 			protectedRouter.Get("/auth/me", authHandler.Me)
 			protectedRouter.Post("/auth/refresh", authHandler.Refresh)
 
@@ -77,7 +80,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	})
 
 	router.Route("/internal/v1", func(internalRouter chi.Router) {
-		internalRouter.Use(internalTokenMiddleware(deps.Config))
+		internalRouter.Use(httpmw.InternalToken(deps.Config))
 		internalRouter.Get("/diagrams/{diagramId}/authorize", internalHandler.AuthorizeDiagram)
 	})
 

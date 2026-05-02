@@ -24,6 +24,7 @@ type outboundMessage struct {
 	payload     []byte
 }
 
+// Connection owns websocket read/write loops for one diagram session.
 type Connection struct {
 	ID        string
 	DiagramID string
@@ -81,7 +82,7 @@ func (connection *Connection) closeSend() {
 
 func (connection *Connection) readPump(ctx context.Context) {
 	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), staleConnectionTimeout)
 		defer cancel()
 		connection.hub.Unregister(cleanupCtx, connection)
 	}()

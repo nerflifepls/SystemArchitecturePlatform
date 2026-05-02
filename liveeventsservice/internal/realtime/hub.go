@@ -12,8 +12,14 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
-const redisPresenceTTL = 90 * time.Second
+const (
+	redisPresenceTTL       = 90 * time.Second
+	ttlRefreshInterval     = 30 * time.Second
+	redisOperationTimeout  = 3 * time.Second
+	staleConnectionTimeout = 5 * time.Second
+)
 
+// Hub tracks active diagram rooms and coordinates Redis pub/sub relay.
 type Hub struct {
 	redis      *goredis.Client
 	instanceID string
@@ -31,6 +37,7 @@ type room struct {
 	subscription context.CancelFunc
 }
 
+// NewHub creates a realtime hub for one service instance.
 func NewHub(redisClient *goredis.Client, instanceID string, logger *log.Logger) *Hub {
 	return &Hub{
 		redis:      redisClient,
@@ -40,6 +47,7 @@ func NewHub(redisClient *goredis.Client, instanceID string, logger *log.Logger) 
 	}
 }
 
+// Register adds a websocket connection to its diagram room and writes presence state.
 func (hub *Hub) Register(ctx context.Context, connection *Connection) error {
 	if writeErr := hub.writeConnectionState(ctx, connection); writeErr != nil {
 		return writeErr
@@ -63,6 +71,7 @@ func (hub *Hub) Register(ctx context.Context, connection *Connection) error {
 	return nil
 }
 
+// SendPresenceSnapshot sends the current Redis presence hash to a newly connected client.
 func (hub *Hub) SendPresenceSnapshot(ctx context.Context, connection *Connection) {
 	values, valuesErr := hub.redis.HVals(ctx, diagramPresenceKey(connection.DiagramID)).Result()
 	if valuesErr != nil {
@@ -81,6 +90,7 @@ func (hub *Hub) SendPresenceSnapshot(ctx context.Context, connection *Connection
 	}
 }
 
+// Unregister removes a websocket connection and publishes a leave event when needed.
 func (hub *Hub) Unregister(ctx context.Context, connection *Connection) {
 	removed := false
 
@@ -108,6 +118,7 @@ func (hub *Hub) Unregister(ctx context.Context, connection *Connection) {
 	}
 }
 
+// Close shuts down all rooms and cleans connection state from Redis.
 func (hub *Hub) Close(ctx context.Context) {
 	hub.closeAll.Do(func() {
 		hub.mu.Lock()
@@ -131,6 +142,7 @@ func (hub *Hub) Close(ctx context.Context) {
 	})
 }
 
+// HandleBinary relays a Yjs update locally and through Redis pub/sub.
 func (hub *Hub) HandleBinary(ctx context.Context, connection *Connection, payload []byte) {
 	messagePayload := append([]byte(nil), payload...)
 	hub.broadcastBinary(connection.DiagramID, messagePayload, connection.ID)
@@ -149,6 +161,7 @@ func (hub *Hub) HandleBinary(ctx context.Context, connection *Connection, payloa
 	}
 }
 
+// HandlePresenceUpdate stores and broadcasts a websocket presence frame.
 func (hub *Hub) HandlePresenceUpdate(ctx context.Context, connection *Connection, presence json.RawMessage) {
 	envelope := presenceEnvelope{
 		Type:         "presence:update",
@@ -257,7 +270,7 @@ func (hub *Hub) removeActiveUserIfLastConnection(ctx context.Context, connection
 }
 
 func (hub *Hub) refreshConnectionTTL(connection *Connection) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(ttlRefreshInterval)
 	defer ticker.Stop()
 
 	for {
@@ -265,7 +278,7 @@ func (hub *Hub) refreshConnectionTTL(connection *Connection) {
 		case <-connection.done:
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), redisOperationTimeout)
 			pipeline := hub.redis.TxPipeline()
 			pipeline.Expire(ctx, wsConnectionKey(connection.ID), redisPresenceTTL)
 			pipeline.Expire(ctx, diagramConnectionsKey(connection.DiagramID), redisPresenceTTL)
@@ -354,7 +367,7 @@ func (hub *Hub) broadcast(diagramID string, message outboundMessage, skipConnect
 	for _, connection := range connections {
 		if !connection.enqueue(message) {
 			go func(staleConnection *Connection) {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), staleConnectionTimeout)
 				defer cancel()
 				hub.Unregister(cleanupCtx, staleConnection)
 			}(connection)

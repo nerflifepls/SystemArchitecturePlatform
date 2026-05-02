@@ -1,0 +1,54 @@
+.panel {
+	border: var(--border-width) solid var(--border);
+	border-radius: var(--border-radius);
+	background: linear-gradient(180deg, oklch(0.2 0.02 240 / 0.96), var(--bg-card));
+	box-shadow: var(--shadow-tight);
+}
+
+.tool {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 18px;
+	padding: 18px;
+}
+
+.tool h2 {
+	color: var(--text-main);
+	font-size: 1rem;
+	font-weight: 800;
+}
+
+.tool p {
+	margin-top: 4px;
+	color: var(--text-sub);
+}
+
+.status,
+.error {
+	padding: 18px;
+	color: var(--text-sub);
+}
+
+.status {
+	display: grid;
+	place-items: center;
+	min-height: 120px;
+	text-align: center;
+}
+
+.wide {
+	width: min(100%, 560px);
+}
+
+.error {
+	border-color: oklch(0.63 0.22 29 / 0.46);
+	background: linear-gradient(180deg, oklch(0.24 0.06 29 / 0.62), oklch(0.18 0.03 29 / 0.92));
+	color: oklch(0.86 0.09 29);
+}
+
+@media (max-width: 780px) {
+	.tool {
+		grid-template-columns: 1fr;
+	}
+}

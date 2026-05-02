@@ -1,10 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Edit3, FileSymlink, Maximize2, Plus, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { diagramApi, projectApi } from "../api/endpoints";
 import type { DiagramDto } from "../api/types";
+import {
+	Button,
+	ButtonLink,
+	ErrorPanel,
+	FormError,
+	FormField,
+	InlineForm,
+	PageHeader,
+	ResourceCard,
+	ResourceCardBody,
+	ResourceGrid,
+	ToolPanel,
+} from "../components/ui";
 import { getErrorMessage } from "../utils/errors";
 
 type DiagramCardProps = {
@@ -43,74 +56,74 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 	}
 
 	return (
-		<article className="resource-card">
-			<div className="card-icon">
-				<FileSymlink size={18} />
-			</div>
+		<ResourceCard
+			icon={<FileSymlink size={18} />}
+			actions={
+				<>
+					<ButtonLink to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}`}>
+						Details
+					</ButtonLink>
+					<ButtonLink
+						variant="primary"
+						to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}/editor`}
+					>
+						<Maximize2 size={16} />
+						<span>Editor</span>
+					</ButtonLink>
+					<Button
+						variant="icon"
+						type="button"
+						onClick={() => setIsEditing((value) => !value)}
+						aria-label="Edit diagram"
+					>
+						<Edit3 size={16} />
+					</Button>
+					<Button
+						variant="icon"
+						tone="danger"
+						type="button"
+						onClick={() => deleteDiagram.mutate()}
+						aria-label="Delete diagram"
+					>
+						<Trash2 size={16} />
+					</Button>
+				</>
+			}
+			message={
+				<>
+					{updateDiagram.isError ?
+						<FormError>{getErrorMessage(updateDiagram.error)}</FormError>
+					:	null}
+					{deleteDiagram.isError ?
+						<FormError>{getErrorMessage(deleteDiagram.error)}</FormError>
+					:	null}
+				</>
+			}
+		>
 			{isEditing ?
-				<form className="resource-card-body edit-form" onSubmit={handleUpdateDiagram}>
-					<label>
-						<span>Title</span>
-						<input value={title} onChange={(event) => setTitle(event.target.value)} />
-					</label>
-					<div className="row-actions">
-						<button
-							className="primary-button"
-							type="submit"
-							disabled={!title.trim() || updateDiagram.isPending}
-						>
-							<Save size={15} />
-							<span>Save</span>
-						</button>
-						<button className="secondary-button" type="button" onClick={() => setIsEditing(false)}>
-							Cancel
-						</button>
-					</div>
-				</form>
-			:	<div className="resource-card-body">
+				<ResourceCardBody>
+					<form className="edit-form" onSubmit={handleUpdateDiagram}>
+						<FormField label="Title">
+							<input value={title} onChange={(event) => setTitle(event.target.value)} />
+						</FormField>
+						<div className="row-actions">
+							<Button variant="primary" type="submit" disabled={!title.trim() || updateDiagram.isPending}>
+								<Save size={15} />
+								<span>Save</span>
+							</Button>
+							<Button type="button" onClick={() => setIsEditing(false)}>
+								Cancel
+							</Button>
+						</div>
+					</form>
+				</ResourceCardBody>
+			:	<ResourceCardBody>
 					<h2>{diagram.title}</h2>
 					<p>Snapshot v{diagram.snapshotVersion ?? 1}</p>
 					<span className="meta-pill">seq {diagram.lastUpdateSeq ?? 0}</span>
-				</div>
+				</ResourceCardBody>
 			}
-			<div className="card-actions">
-				<Link
-					className="secondary-button"
-					to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}`}
-				>
-					Details
-				</Link>
-				<Link
-					className="primary-button"
-					to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}/editor`}
-				>
-					<Maximize2 size={16} />
-					<span>Editor</span>
-				</Link>
-				<button
-					className="icon-button"
-					type="button"
-					onClick={() => setIsEditing((value) => !value)}
-					aria-label="Edit diagram"
-				>
-					<Edit3 size={16} />
-				</button>
-				<button
-					className="icon-button danger"
-					type="button"
-					onClick={() => deleteDiagram.mutate()}
-					aria-label="Delete diagram"
-				>
-					<Trash2 size={16} />
-				</button>
-			</div>
-			{updateDiagram.isError ?
-				<p className="form-error card-message">{getErrorMessage(updateDiagram.error)}</p>
-			:	null}
-			{deleteDiagram.isError ?
-				<p className="form-error card-message">{getErrorMessage(deleteDiagram.error)}</p>
-			:	null}
-		</article>
+		</ResourceCard>
 	);
 }
 
@@ -182,94 +195,79 @@ export function ProjectPage() {
 
 	return (
 		<div className="page-stack">
-			<div className="page-heading">
-				<div>
-					<span className="eyebrow">Project</span>
-					<h1>{projectQuery.data?.name ?? "Project"}</h1>
-				</div>
-				<div className="page-actions">
-					<span className="meta-pill">{diagramsQuery.data?.length ?? 0} diagrams</span>
-				</div>
-			</div>
+			<PageHeader
+				eyebrow="Project"
+				title={projectQuery.data?.name ?? "Project"}
+				actions={<span className="meta-pill">{diagramsQuery.data?.length ?? 0} diagrams</span>}
+			/>
 
 			{projectQuery.isError ?
-				<div className="error-panel">{getErrorMessage(projectQuery.error)}</div>
+				<ErrorPanel>{getErrorMessage(projectQuery.error)}</ErrorPanel>
 			:	null}
 
-			<section className="tool-panel" aria-labelledby="project-settings-title">
+			<ToolPanel aria-labelledby="project-settings-title">
 				<div>
 					<h2 id="project-settings-title">Project details</h2>
 					<p className="muted-copy">Keep project naming aligned with the design effort.</p>
 				</div>
-				<form className="inline-form" onSubmit={handleUpdateProject}>
-					<label>
-						<span>Name</span>
+				<InlineForm onSubmit={handleUpdateProject}>
+					<FormField label="Name">
 						<input value={projectName} onChange={(event) => setProjectName(event.target.value)} />
-					</label>
-					<label>
-						<span>Description</span>
+					</FormField>
+					<FormField label="Description">
 						<input
 							value={projectDescription}
 							onChange={(event) => setProjectDescription(event.target.value)}
 						/>
-					</label>
-					<button
-						className="primary-button"
-						type="submit"
-						disabled={!projectName.trim() || updateProject.isPending}
-					>
+					</FormField>
+					<Button variant="primary" type="submit" disabled={!projectName.trim() || updateProject.isPending}>
 						<Save size={16} />
 						<span>Save</span>
-					</button>
-				</form>
+					</Button>
+				</InlineForm>
 				{updateProject.isError ?
-					<p className="form-error">{getErrorMessage(updateProject.error)}</p>
+					<FormError>{getErrorMessage(updateProject.error)}</FormError>
 				:	null}
-			</section>
+			</ToolPanel>
 
-			<section className="tool-panel" aria-labelledby="new-diagram-title">
+			<ToolPanel aria-labelledby="new-diagram-title">
 				<div>
 					<h2 id="new-diagram-title">New diagram</h2>
 					<p className="muted-copy">Create an editable collaborative graph document.</p>
 				</div>
-				<form className="inline-form" onSubmit={handleCreateDiagram}>
-					<label>
-						<span>Title</span>
+				<InlineForm onSubmit={handleCreateDiagram}>
+					<FormField label="Title">
 						<input
 							value={diagramTitle}
 							onChange={(event) => setDiagramTitle(event.target.value)}
 							placeholder="Checkout context"
 						/>
-					</label>
-					<button
-						className="primary-button"
-						type="submit"
-						disabled={!diagramTitle.trim() || createDiagram.isPending}
-					>
+					</FormField>
+					<Button variant="primary" type="submit" disabled={!diagramTitle.trim() || createDiagram.isPending}>
 						<Plus size={16} />
 						<span>Create</span>
-					</button>
-				</form>
+					</Button>
+				</InlineForm>
 				{createDiagram.isError ?
-					<p className="form-error">{getErrorMessage(createDiagram.error)}</p>
+					<FormError>{getErrorMessage(createDiagram.error)}</FormError>
 				:	null}
-			</section>
+			</ToolPanel>
 
 			{diagramsQuery.isError ?
-				<div className="error-panel">{getErrorMessage(diagramsQuery.error)}</div>
+				<ErrorPanel>{getErrorMessage(diagramsQuery.error)}</ErrorPanel>
 			:	null}
 
-			<section className="resource-grid" aria-label="Diagram list">
-				{diagramsQuery.isPending ?
-					<div className="status-panel">Loading diagrams...</div>
-				:	null}
-				{diagramsQuery.data?.length === 0 ?
-					<div className="status-panel">No diagrams yet.</div>
-				:	null}
+			<ResourceGrid
+				aria-label="Diagram list"
+				isLoading={diagramsQuery.isPending}
+				loadingMessage="Loading diagrams..."
+				isEmpty={diagramsQuery.data?.length === 0}
+				emptyMessage="No diagrams yet."
+			>
 				{diagramsQuery.data?.map((diagram) => (
 					<DiagramCard key={diagram.id} diagram={diagram} workspaceId={workspaceId} projectId={projectId} />
 				))}
-			</section>
+			</ResourceGrid>
 		</div>
 	);
 }
