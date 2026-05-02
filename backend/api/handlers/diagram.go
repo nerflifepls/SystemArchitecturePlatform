@@ -48,8 +48,9 @@ type diagramRequest struct {
 }
 
 type diagramUpdatesResponse struct {
-	Items         []diagramUpdateResponse `json:"items"`
-	LastUpdateSeq int64                   `json:"lastUpdateSeq"`
+	Items                 []diagramUpdateResponse `json:"items"`
+	SnapshotBaseUpdateSeq int64                   `json:"snapshotBaseUpdateSeq"`
+	LastUpdateSeq         int64                   `json:"lastUpdateSeq"`
 }
 
 type diagramUpdateResponse struct {
@@ -253,7 +254,7 @@ func (handler DiagramHandler) ListUpdates(writer http.ResponseWriter, request *h
 		}
 		afterSeq = parsedAfterSeq
 	}
-	updates, lastUpdateSeq, listErr := handler.diagrams.ListUpdates(request.Context(), auth.User.ID, diagramID, afterSeq)
+	updates, snapshotBaseUpdateSeq, lastUpdateSeq, listErr := handler.diagrams.ListUpdates(request.Context(), auth.User.ID, diagramID, afterSeq)
 	if listErr != nil {
 		response.WriteError(writer, request, listErr)
 		return
@@ -269,7 +270,11 @@ func (handler DiagramHandler) ListUpdates(writer http.ResponseWriter, request *h
 			CreatedAt:    update.CreatedAt,
 		})
 	}
-	response.WriteJSON(writer, http.StatusOK, diagramUpdatesResponse{Items: responseItems, LastUpdateSeq: lastUpdateSeq})
+	response.WriteJSON(writer, http.StatusOK, diagramUpdatesResponse{
+		Items:                 responseItems,
+		SnapshotBaseUpdateSeq: snapshotBaseUpdateSeq,
+		LastUpdateSeq:         lastUpdateSeq,
+	})
 }
 
 func (handler DiagramHandler) AppendUpdate(writer http.ResponseWriter, request *http.Request) {

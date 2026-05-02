@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { useParams } from "react-router-dom";
 import * as Y from "yjs";
 
+import { ApiError } from "../api/client";
 import { crdtApi, diagramApi } from "../api/endpoints";
 import type { CrdtUpdatesResponseDto, PresenceCursorDto } from "../api/types";
 import { DiagramCanvas } from "../components/editor/DiagramCanvas";
@@ -23,12 +24,12 @@ import {
 	INITIAL_UPDATE_COMPACTION_THRESHOLD,
 	INIT_ORIGIN,
 	LOCAL_ORIGIN,
+	LIVE_DRAG_ORIGIN,
 	PROTOCOL_PRESETS,
 	REMOTE_ORIGIN,
 	clampCommentSize,
 	commentNodeDataMatches,
 	commentSizesEqual,
-	encodeCompactedSnapshot,
 	getFallbackCommentPosition,
 	getNodeChangeId,
 	isCommentNodeId,
@@ -156,9 +157,17 @@ export function DiagramEditorPage() {
 	const snapshotReady = snapshotQuery.isSuccess || snapshotQuery.isError;
 	const updatesReady = updatesQuery.isSuccess || updatesQuery.isError;
 
+	const isCompactedSequenceError = useCallback((error: unknown) => {
+		return error instanceof ApiError && error.status === 409 && error.message.includes("compacted snapshot");
+	}, []);
+
 	const applyPersistedUpdates = useCallback(
 		(updatesResponse: CrdtUpdatesResponseDto) => {
-			let latestAppliedSeq = persistedUpdateSeqRef.current;
+			let latestAppliedSeq = Math.max(
+				persistedUpdateSeqRef.current,
+				updatesResponse.snapshotBaseUpdateSeq,
+				updatesResponse.lastUpdateSeq,
+			);
 
 			for (const update of updatesResponse.items) {
 				const bytes = updateDtoToBytes(update);
@@ -187,6 +196,13 @@ export function DiagramEditorPage() {
 
 		const syncPromise = crdtApi
 			.listUpdates(diagramId, { afterSeq: persistedUpdateSeqRef.current })
+			.catch((error: unknown) => {
+				if (!isCompactedSequenceError(error)) {
+					throw error;
+				}
+
+				return crdtApi.listUpdates(diagramId);
+			})
 			.then(applyPersistedUpdates);
 
 		persistedSyncPromiseRef.current = syncPromise;
@@ -198,7 +214,7 @@ export function DiagramEditorPage() {
 				persistedSyncPromiseRef.current = null;
 			}
 		}
-	}, [applyPersistedUpdates, diagramId]);
+	}, [applyPersistedUpdates, diagramId, isCompactedSequenceError]);
 
 	const waitForPendingUpdates = useCallback(async () => {
 		const pendingUpdates = Array.from(pendingUpdatePromisesRef.current);
@@ -256,16 +272,9 @@ export function DiagramEditorPage() {
 		mutationFn: async () => {
 			await waitForPendingUpdates();
 			const baseUpdateSeq = await syncPersistedUpdates();
-			// Fresh compaction rewrites Yjs item IDs, so avoid it while another editor may still emit old-document updates.
-			const shouldCompactSnapshot = editorConnections.length <= 1;
-			const snapshotBytes = shouldCompactSnapshot ? encodeCompactedSnapshot(maps) : Y.encodeStateAsUpdate(doc);
-			const result = await crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current);
+			const snapshotBytes = Y.encodeStateAsUpdate(doc);
 
-			if (shouldCompactSnapshot) {
-				Y.applyUpdate(doc, snapshotBytes, REMOTE_ORIGIN);
-			}
-
-			return result;
+			return crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current);
 		},
 		onMutate: () => setSyncState("saving"),
 		onSuccess: () => setSyncState(websocketRef.current?.readyState === WebSocket.OPEN ? "live" : "offline"),
@@ -275,18 +284,32 @@ export function DiagramEditorPage() {
 		},
 	});
 
-	const syncFromSharedMaps = useCallback(() => {
+	const syncNodesFromSharedMap = useCallback(() => {
 		const nextNodes = Array.from(maps.nodes.values()).map(toFlowNode);
-		const nextEdges = Array.from(maps.edges.values()).map(toFlowEdge);
-		const nextComments = sortComments(Array.from(maps.comments.values()));
 
 		nodesRef.current = nextNodes;
-		edgesRef.current = nextEdges;
-		commentsRef.current = nextComments;
 		setNodes(nextNodes);
+	}, [maps.nodes]);
+
+	const syncEdgesFromSharedMap = useCallback(() => {
+		const nextEdges = Array.from(maps.edges.values()).map(toFlowEdge);
+
+		edgesRef.current = nextEdges;
 		setEdges(nextEdges);
+	}, [maps.edges]);
+
+	const syncCommentsFromSharedMap = useCallback(() => {
+		const nextComments = sortComments(Array.from(maps.comments.values()));
+
+		commentsRef.current = nextComments;
 		setComments(nextComments);
-	}, [maps.comments, maps.edges, maps.nodes]);
+	}, [maps.comments]);
+
+	const syncFromSharedMaps = useCallback(() => {
+		syncNodesFromSharedMap();
+		syncEdgesFromSharedMap();
+		syncCommentsFromSharedMap();
+	}, [syncCommentsFromSharedMap, syncEdgesFromSharedMap, syncNodesFromSharedMap]);
 
 	const scheduleSnapshotSave = useCallback(() => {
 		if (snapshotTimerRef.current) {
@@ -300,25 +323,25 @@ export function DiagramEditorPage() {
 
 	useEffect(() => {
 		const nodeObserver = (event: Y.YMapEvent<StoredNode>) => {
-			if (event.transaction.origin === LOCAL_ORIGIN) {
+			if (event.transaction.origin === LOCAL_ORIGIN || event.transaction.origin === LIVE_DRAG_ORIGIN) {
 				return;
 			}
 
-			syncFromSharedMaps();
+			syncNodesFromSharedMap();
 		};
 		const edgeObserver = (event: Y.YMapEvent<StoredEdge>) => {
-			if (event.transaction.origin === LOCAL_ORIGIN) {
+			if (event.transaction.origin === LOCAL_ORIGIN || event.transaction.origin === LIVE_DRAG_ORIGIN) {
 				return;
 			}
 
-			syncFromSharedMaps();
+			syncEdgesFromSharedMap();
 		};
 		const commentObserver = (event: Y.YMapEvent<StoredComment>) => {
-			if (event.transaction.origin === LOCAL_ORIGIN) {
+			if (event.transaction.origin === LOCAL_ORIGIN || event.transaction.origin === LIVE_DRAG_ORIGIN) {
 				return;
 			}
 
-			syncFromSharedMaps();
+			syncCommentsFromSharedMap();
 		};
 
 		maps.nodes.observe(nodeObserver);
@@ -330,7 +353,14 @@ export function DiagramEditorPage() {
 			maps.edges.unobserve(edgeObserver);
 			maps.comments.unobserve(commentObserver);
 		};
-	}, [maps.comments, maps.edges, maps.nodes, syncFromSharedMaps]);
+	}, [
+		maps.comments,
+		maps.edges,
+		maps.nodes,
+		syncCommentsFromSharedMap,
+		syncEdgesFromSharedMap,
+		syncNodesFromSharedMap,
+	]);
 
 	useEffect(() => {
 		snapshotAppliedRef.current = false;
@@ -367,7 +397,11 @@ export function DiagramEditorPage() {
 			}
 		}
 
-		persistedUpdateSeqRef.current = Math.max(persistedUpdateSeqRef.current, updatesQuery.data?.lastUpdateSeq ?? 0);
+		persistedUpdateSeqRef.current = Math.max(
+			persistedUpdateSeqRef.current,
+			updatesQuery.data?.snapshotBaseUpdateSeq ?? 0,
+			updatesQuery.data?.lastUpdateSeq ?? 0,
+		);
 
 		if (maps.nodes.size === 0) {
 			doc.transact(() => {
@@ -406,6 +440,10 @@ export function DiagramEditorPage() {
 
 			if (websocketRef.current?.readyState === WebSocket.OPEN) {
 				websocketRef.current.send(toArrayBuffer(update));
+			}
+
+			if (origin === LIVE_DRAG_ORIGIN) {
+				return;
 			}
 
 			const persistUpdatePromise = crdtApi
@@ -577,25 +615,28 @@ export function DiagramEditorPage() {
 				const nextNodes = applyNodeChanges(snappedRegularChanges, nodesRef.current);
 				const changedNodeIds = new Set<string>();
 				const removedNodeIds = new Set<string>();
+				let shouldPersistRegularChanges = false;
 
 				for (const change of snappedRegularChanges) {
 					switch (change.type) {
 						case "add":
 							changedNodeIds.add(change.item.id);
+							shouldPersistRegularChanges = true;
 							break;
 						case "position":
 							if (change.position) {
-								if (change.dragging !== true) {
-									changedNodeIds.add(change.id);
-								}
+								changedNodeIds.add(change.id);
+								shouldPersistRegularChanges ||= change.dragging !== true;
 							}
 							break;
 						case "remove":
 							removedNodeIds.add(change.id);
+							shouldPersistRegularChanges = true;
 							break;
 						case "replace":
 							removedNodeIds.add(change.id);
 							changedNodeIds.add(change.item.id);
+							shouldPersistRegularChanges = true;
 							break;
 					}
 				}
@@ -624,25 +665,28 @@ export function DiagramEditorPage() {
 				}
 
 				if (changedNodeIds.size > 0 || removedNodeIds.size > 0) {
-					doc.transact(() => {
-						for (const nodeId of removedNodeIds) {
-							maps.nodes.delete(nodeId);
-						}
+					doc.transact(
+						() => {
+							for (const nodeId of removedNodeIds) {
+								maps.nodes.delete(nodeId);
+							}
 
-						if (removedNodeIds.size > 0) {
-							for (const [edgeId, edge] of Array.from(maps.edges.entries())) {
-								if (removedNodeIds.has(edge.source) || removedNodeIds.has(edge.target)) {
-									maps.edges.delete(edgeId);
+							if (removedNodeIds.size > 0) {
+								for (const [edgeId, edge] of Array.from(maps.edges.entries())) {
+									if (removedNodeIds.has(edge.source) || removedNodeIds.has(edge.target)) {
+										maps.edges.delete(edgeId);
+									}
 								}
 							}
-						}
 
-						for (const node of nextNodes) {
-							if (changedNodeIds.has(node.id)) {
-								maps.nodes.set(node.id, toStoredNode(node));
+							for (const node of nextNodes) {
+								if (changedNodeIds.has(node.id)) {
+									maps.nodes.set(node.id, toStoredNode(node));
+								}
 							}
-						}
-					}, LOCAL_ORIGIN);
+						},
+						shouldPersistRegularChanges ? LOCAL_ORIGIN : LIVE_DRAG_ORIGIN,
+					);
 				}
 			}
 
@@ -662,6 +706,7 @@ export function DiagramEditorPage() {
 			const changedCommentIds = new Set<string>();
 			const removedCommentIds = new Set<string>();
 			let commentsChanged = false;
+			let shouldPersistCommentChanges = false;
 			let nextComments = commentsRef.current;
 
 			for (const change of commentChanges) {
@@ -669,6 +714,8 @@ export function DiagramEditorPage() {
 					case "position":
 						if (change.position) {
 							commentsChanged = true;
+							changedCommentIds.add(change.id);
+							shouldPersistCommentChanges ||= change.dragging !== true;
 							nextComments = nextComments.map((comment) =>
 								comment.id === change.id ? { ...comment, position: change.position } : comment,
 							);
@@ -677,10 +724,12 @@ export function DiagramEditorPage() {
 					case "remove":
 						commentsChanged = true;
 						removedCommentIds.add(change.id);
+						shouldPersistCommentChanges = true;
 						break;
 					case "replace":
 						commentsChanged = true;
 						changedCommentIds.add(change.item.id);
+						shouldPersistCommentChanges = true;
 						nextComments = nextComments.map((comment) =>
 							comment.id === change.item.id ? { ...comment, position: change.item.position } : comment,
 						);
@@ -700,17 +749,20 @@ export function DiagramEditorPage() {
 				return;
 			}
 
-			doc.transact(() => {
-				for (const commentId of removedCommentIds) {
-					maps.comments.delete(commentId);
-				}
-
-				for (const comment of nextComments) {
-					if (changedCommentIds.has(comment.id)) {
-						maps.comments.set(comment.id, comment);
+			doc.transact(
+				() => {
+					for (const commentId of removedCommentIds) {
+						maps.comments.delete(commentId);
 					}
-				}
-			}, LOCAL_ORIGIN);
+
+					for (const comment of nextComments) {
+						if (changedCommentIds.has(comment.id)) {
+							maps.comments.set(comment.id, comment);
+						}
+					}
+				},
+				shouldPersistCommentChanges ? LOCAL_ORIGIN : LIVE_DRAG_ORIGIN,
+			);
 		},
 		[doc, maps.comments, maps.edges, maps.nodes],
 	);

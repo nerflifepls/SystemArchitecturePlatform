@@ -179,5 +179,6 @@ export type DiagramResponseDto = {
 
 export type CrdtUpdatesResponseDto = {
 	items: CrdtUpdateDto[];
+	snapshotBaseUpdateSeq: number;
 	lastUpdateSeq: number;
 };

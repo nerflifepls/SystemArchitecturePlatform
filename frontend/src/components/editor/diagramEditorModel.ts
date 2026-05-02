@@ -73,6 +73,7 @@ export type CommentSize = {
 
 export const INIT_ORIGIN = "init";
 export const LOCAL_ORIGIN = "local";
+export const LIVE_DRAG_ORIGIN = "live-drag";
 export const REMOTE_ORIGIN = "remote";
 export const NODE_SNAP_DISTANCE = 18;
 export const COMMENT_DEFAULT_SIZE = { width: 246, height: 154 };

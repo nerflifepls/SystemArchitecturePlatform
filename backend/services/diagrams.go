@@ -148,21 +148,21 @@ func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uui
 	return SnapshotSaveResult{SnapshotVersion: updatedDiagram.SnapshotVersion, LastUpdateSeq: updatedDiagram.LastUpdateSeq, SavedAt: updatedDiagram.UpdatedAt}, nil
 }
 
-func (service *DiagramService) ListUpdates(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, afterSeq int64) ([]domain.DiagramUpdate, int64, error) {
+func (service *DiagramService) ListUpdates(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, afterSeq int64) ([]domain.DiagramUpdate, int64, int64, error) {
 	diagram, _, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
 	if accessErr != nil {
-		return nil, 0, accessErr
+		return nil, 0, 0, accessErr
 	}
 	if afterSeq < 0 {
 		afterSeq = diagram.SnapshotBaseUpdateSeq
 	} else if afterSeq < diagram.SnapshotBaseUpdateSeq {
-		return nil, 0, Conflict("update sequence is older than the compacted snapshot; reload the diagram snapshot")
+		return nil, 0, 0, Conflict("update sequence is older than the compacted snapshot; reload the diagram snapshot")
 	}
 	updates, listErr := service.diagrams.ListDiagramUpdates(ctx, diagramID, afterSeq)
 	if listErr != nil {
-		return nil, 0, mapRepositoryError(listErr, "diagram updates")
+		return nil, 0, 0, mapRepositoryError(listErr, "diagram updates")
 	}
-	return updates, diagram.LastUpdateSeq, nil
+	return updates, diagram.SnapshotBaseUpdateSeq, diagram.LastUpdateSeq, nil
 }
 
 func (service *DiagramService) AppendUpdate(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, updateID uuid.UUID, clientID string, updateBytes []byte) (domain.DiagramUpdate, bool, error) {
