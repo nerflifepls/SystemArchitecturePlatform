@@ -1,0 +1,82 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8081}
+        VITE_LIVE_WS_URL: ${VITE_LIVE_WS_URL:-ws://localhost:8080/ws}
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+      - liveeventsservice
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://platform:platform@postgresql:5432/system_design_platform?sslmode=disable
+      REDIS_ADDR: redis:6379
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SESSION_COOKIE_NAME: sid
+      SESSION_TTL: 720h
+      SESSION_COOKIE_SECURE: "false"
+      FRONTEND_ORIGIN: http://localhost:5173
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:-local-internal-token}
+      LIVE_EVENTS_PUBLIC_URL: ${VITE_LIVE_WS_URL:-ws://localhost:8080/ws}
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+
+  liveeventsservice:
+    build:
+      context: ./liveeventsservice
+    environment:
+      PORT: "8080"
+      REDIS_ADDR: redis:6379
+      BACKEND_INTERNAL_URL: http://backend:8081
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:-local-internal-token}
+      FRONTEND_ORIGIN: http://localhost:5173
+      SESSION_COOKIE_NAME: sid
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: system_design_platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U platform -d system_design_platform" ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:

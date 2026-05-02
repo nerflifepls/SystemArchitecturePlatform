@@ -1,0 +1,6 @@
+.vscode
+bin
+tmp
+*.test
+Dockerfile
+.dockerignore
