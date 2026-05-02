@@ -44,10 +44,21 @@ declare global {
 const GOOGLE_SCRIPT_ID = "google-identity-services";
 
 function loadGoogleScript() {
+	if (window.google) {
+		return Promise.resolve();
+	}
+
 	const existingScript = document.querySelector<HTMLScriptElement>(`#${GOOGLE_SCRIPT_ID}`);
 
 	if (existingScript) {
-		return Promise.resolve();
+		return new Promise<void>((resolve, reject) => {
+			existingScript.addEventListener("load", () => resolve(), { once: true });
+			existingScript.addEventListener(
+				"error",
+				() => reject(new Error("Google Identity Services could not be loaded.")),
+				{ once: true },
+			);
+		});
 	}
 
 	return new Promise<void>((resolve, reject) => {
@@ -65,6 +76,7 @@ function loadGoogleScript() {
 export function GoogleSignInButton() {
 	const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
 	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [isButtonReady, setIsButtonReady] = useState(false);
 	const [scriptError, setScriptError] = useState<string | null>(null);
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
@@ -76,6 +88,8 @@ export function GoogleSignInButton() {
 			navigate("/");
 		},
 	});
+	const signInWithCredentialRef = useRef(signInMutation.mutate);
+	signInWithCredentialRef.current = signInMutation.mutate;
 
 	useEffect(() => {
 		if (!googleClientId) {
@@ -83,6 +97,8 @@ export function GoogleSignInButton() {
 		}
 
 		let cancelled = false;
+		setIsButtonReady(false);
+		setScriptError(null);
 
 		void loadGoogleScript()
 			.then(() => {
@@ -99,21 +115,32 @@ export function GoogleSignInButton() {
 							return;
 						}
 
-						signInMutation.mutate(response.credential);
+						setScriptError(null);
+						signInWithCredentialRef.current(response.credential);
 					},
 				});
 
+				const buttonWidth = Math.min(
+					Math.max(Math.floor(containerRef.current.getBoundingClientRect().width), 220),
+					360,
+				);
+
 				containerRef.current.innerHTML = "";
 				window.google.accounts.id.renderButton(containerRef.current, {
-					theme: "outline",
+					theme: "filled_black",
 					size: "large",
-					shape: "rectangular",
-					text: "signin_with",
-					width: "320",
+					shape: "pill",
+					text: "continue_with",
+					width: String(buttonWidth),
 				});
+
+				if (!cancelled) {
+					setIsButtonReady(true);
+				}
 			})
 			.catch((error: unknown) => {
 				if (!cancelled) {
+					setIsButtonReady(false);
 					setScriptError(getErrorMessage(error));
 				}
 			});
@@ -121,7 +148,7 @@ export function GoogleSignInButton() {
 		return () => {
 			cancelled = true;
 		};
-	}, [googleClientId, signInMutation]);
+	}, [googleClientId]);
 
 	if (!googleClientId) {
 		return (
@@ -137,7 +164,18 @@ export function GoogleSignInButton() {
 
 	return (
 		<div className="google-signin">
-			<div ref={containerRef} />
+			<div className="google-button-frame">
+				{!isButtonReady ?
+					<div className="google-button-placeholder" aria-hidden="true">
+						<LogIn size={18} />
+						<span>Continue with Google</span>
+					</div>
+				:	null}
+				<div className="google-button-host" ref={containerRef} />
+			</div>
+			{signInMutation.isPending ?
+				<p className="google-signin-status">Signing in...</p>
+			:	null}
 			{scriptError ?
 				<p className="form-error">{scriptError}</p>
 			:	null}

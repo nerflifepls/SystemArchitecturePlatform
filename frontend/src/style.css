@@ -141,9 +141,9 @@ a {
 .login-panel {
 	position: relative;
 	display: grid;
-	width: min(100%, 460px);
-	gap: 20px;
-	padding: 26px;
+	width: min(100%, 440px);
+	gap: 18px;
+	padding: 28px;
 	overflow: hidden;
 	isolation: isolate;
 }
@@ -155,16 +155,11 @@ a {
 
 .login-panel::after {
 	position: absolute;
-	inset: auto 26px 0 auto;
+	inset: 0 0 auto;
 	z-index: 0;
-	width: 118px;
-	height: 86px;
-	border: 1px solid oklch(0.72 0.16 150 / 0.28);
-	border-radius: 18px;
-	background: linear-gradient(135deg, oklch(0.72 0.16 150 / 0.12), oklch(0.65 0.14 240 / 0.18));
+	height: 3px;
+	background: linear-gradient(90deg, var(--primary), var(--secondary), transparent 78%);
 	content: "";
-	filter: blur(0.2px);
-	transform: rotate(-10deg) translateY(38px);
 }
 
 .login-panel h1,
@@ -175,6 +170,10 @@ a {
 	font-weight: 800;
 	line-height: 1.12;
 	letter-spacing: 0;
+}
+
+.login-panel .muted-copy {
+	max-width: 34ch;
 }
 
 .brand-block {
@@ -244,7 +243,68 @@ a {
 
 .google-signin {
 	display: grid;
-	gap: 12px;
+	gap: 10px;
+	min-width: 0;
+}
+
+.google-button-frame {
+	display: grid;
+	position: relative;
+	width: 100%;
+	min-height: 52px;
+	place-items: center;
+	padding: 5px;
+	border: 1px solid oklch(0.65 0.14 240 / 0.3);
+	border-radius: 8px;
+	background: linear-gradient(180deg, oklch(0.16 0.018 240), oklch(0.13 0.014 240));
+	overflow: hidden;
+}
+
+.google-button-frame > * {
+	grid-area: 1 / 1;
+}
+
+.google-button-host {
+	display: grid;
+	position: relative;
+	z-index: 1;
+	width: 100%;
+	place-items: center;
+}
+
+.google-button-host > div,
+.google-button-host iframe {
+	max-width: 100% !important;
+}
+
+.google-button-placeholder {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 40px;
+	padding: 0 14px;
+	border: 1px solid oklch(1 0 0 / 0.1);
+	border-radius: 999px;
+	background: oklch(0.1 0 0);
+	color: var(--text-main);
+	font-size: 0.92rem;
+	font-weight: 800;
+}
+
+.google-signin-status {
+	color: var(--text-sub);
+	font-size: 0.84rem;
+	font-weight: 800;
+}
+
+.login-panel .form-error {
+	padding: 10px 12px;
+	border: 1px solid oklch(0.63 0.22 29 / 0.36);
+	border-radius: 8px;
+	background: oklch(0.63 0.22 29 / 0.1);
+	font-size: 0.84rem;
 }
 
 .config-state {

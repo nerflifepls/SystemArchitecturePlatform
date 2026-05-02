@@ -60,11 +60,15 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 			icon={<FileSymlink size={18} />}
 			actions={
 				<>
-					<ButtonLink to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}`}>
+					<ButtonLink
+						size="compact"
+						to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}`}
+					>
 						Details
 					</ButtonLink>
 					<ButtonLink
 						variant="primary"
+						size="compact"
 						to={`/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagram.id}/editor`}
 					>
 						<Maximize2 size={16} />
@@ -72,6 +76,7 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 					</ButtonLink>
 					<Button
 						variant="icon"
+						size="compact"
 						type="button"
 						onClick={() => setIsEditing((value) => !value)}
 						aria-label="Edit diagram"
@@ -80,6 +85,7 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 					</Button>
 					<Button
 						variant="icon"
+						size="compact"
 						tone="danger"
 						type="button"
 						onClick={() => deleteDiagram.mutate()}

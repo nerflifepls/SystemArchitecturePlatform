@@ -11,6 +11,8 @@
 	font-size: 0.92rem;
 	font-weight: 800;
 	line-height: 1;
+	max-width: 100%;
+	white-space: nowrap;
 	transition:
 		border-color 0.16s ease,
 		background 0.16s ease,
@@ -63,14 +65,14 @@
 }
 
 .compact {
-	min-height: 32px;
+	min-height: 34px;
 	padding: 0 10px;
 	font-size: 0.84rem;
 }
 
 .compact.icon {
-	width: 32px;
-	min-width: 32px;
+	width: 34px;
+	min-width: 34px;
 	padding: 0;
 }
 

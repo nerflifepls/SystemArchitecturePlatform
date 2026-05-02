@@ -48,9 +48,12 @@ export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
 			icon={<FolderKanban size={18} />}
 			actions={
 				<>
-					<ButtonLink to={`/workspaces/${workspaceId}/projects/${project.id}`}>Open</ButtonLink>
+					<ButtonLink size="compact" to={`/workspaces/${workspaceId}/projects/${project.id}`}>
+						Open
+					</ButtonLink>
 					<Button
 						variant="icon"
+						size="compact"
 						type="button"
 						onClick={() => setIsEditing((value) => !value)}
 						aria-label="Edit project"
@@ -59,6 +62,7 @@ export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
 					</Button>
 					<Button
 						variant="icon"
+						size="compact"
 						tone="danger"
 						type="button"
 						onClick={() => deleteProject.mutate()}

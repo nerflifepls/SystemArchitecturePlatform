@@ -23,6 +23,7 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 			return;
 		}
 
+		let isCurrent = true;
 		let websocket: WebSocket;
 
 		try {
@@ -39,7 +40,12 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 		setConnections({});
 
 		websocket.addEventListener("open", () => {
+			if (!isCurrent) {
+				return;
+			}
+
 			setStatus("live");
+			setLastError(null);
 			websocket.send(
 				JSON.stringify({
 					type: "presence:update",
@@ -57,6 +63,10 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 		});
 
 		websocket.addEventListener("message", (event) => {
+			if (!isCurrent) {
+				return;
+			}
+
 			if (typeof event.data !== "string") {
 				return;
 			}
@@ -82,15 +92,24 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 		});
 
 		websocket.addEventListener("close", () => {
+			if (!isCurrent) {
+				return;
+			}
+
 			setStatus("offline");
 		});
 
 		websocket.addEventListener("error", () => {
+			if (!isCurrent) {
+				return;
+			}
+
 			setStatus("offline");
 			setLastError("Realtime service is unavailable.");
 		});
 
 		return () => {
+			isCurrent = false;
 			websocket.close();
 		};
 	}, [diagramId, scope]);

@@ -28,8 +28,8 @@ export function LoginPage() {
 						<span>Collaborative MVP</span>
 					</div>
 				</div>
-				<h1 id="login-title">Sign in</h1>
-				<p className="muted-copy">Use a Google account connected to the backend session service.</p>
+				<h1 id="login-title">Welcome back</h1>
+				<p className="muted-copy">Sign in to continue to your workspaces.</p>
 				<GoogleSignInButton />
 				{sessionQuery.isError ?
 					<p className="form-error">Session check failed: {getErrorMessage(sessionQuery.error)}</p>

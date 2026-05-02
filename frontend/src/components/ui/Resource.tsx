@@ -42,8 +42,10 @@ type ResourceCardProps = ComponentPropsWithoutRef<"article"> & {
 export function ResourceCard({ icon, actions, message, children, className, ...props }: ResourceCardProps) {
 	return (
 		<article className={classNames(styles.card, className)} {...props}>
-			<div className={styles.icon}>{icon}</div>
-			{children}
+			<div className={styles.content}>
+				<div className={styles.icon}>{icon}</div>
+				{children}
+			</div>
 			{actions ?
 				<div className={styles.actions}>{actions}</div>
 			:	null}

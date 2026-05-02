@@ -97,9 +97,12 @@ export function DashboardPage() {
 						icon={<FolderKanban size={18} />}
 						actions={
 							<>
-								<ButtonLink to={`/workspaces/${workspace.id}`}>Open</ButtonLink>
+								<ButtonLink size="compact" to={`/workspaces/${workspace.id}`}>
+									Open
+								</ButtonLink>
 								<Button
 									variant="icon"
+									size="compact"
 									tone="danger"
 									type="button"
 									onClick={() => deleteWorkspace.mutate(workspace.id)}

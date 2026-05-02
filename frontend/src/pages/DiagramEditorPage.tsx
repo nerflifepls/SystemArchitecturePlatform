@@ -446,6 +446,7 @@ export function DiagramEditorPage() {
 			return;
 		}
 
+		let isCurrent = true;
 		let websocket: WebSocket;
 
 		try {
@@ -459,16 +460,25 @@ export function DiagramEditorPage() {
 		websocket.binaryType = "arraybuffer";
 		websocketRef.current = websocket;
 		setSyncState("loading");
+		setLastError(null);
 		setOwnConnectionId(null);
 		setPresenceConnections({});
 
 		websocket.addEventListener("open", () => {
+			if (!isCurrent || websocketRef.current !== websocket) {
+				return;
+			}
+
 			setSyncState("live");
 			setLastError(null);
 			sendPresenceUpdate(null, true);
 		});
 
 		websocket.addEventListener("message", (event) => {
+			if (!isCurrent || websocketRef.current !== websocket) {
+				return;
+			}
+
 			if (typeof event.data === "string") {
 				const frame = parsePresenceFrame(event.data);
 
@@ -499,6 +509,10 @@ export function DiagramEditorPage() {
 
 			if (event.data instanceof Blob) {
 				void event.data.arrayBuffer().then((buffer) => {
+					if (!isCurrent || websocketRef.current !== websocket) {
+						return;
+					}
+
 					Y.applyUpdate(doc, new Uint8Array(buffer), REMOTE_ORIGIN);
 					schedulePersistedSync();
 				});
@@ -506,18 +520,29 @@ export function DiagramEditorPage() {
 		});
 
 		websocket.addEventListener("close", () => {
+			if (!isCurrent || websocketRef.current !== websocket) {
+				return;
+			}
+
 			setSyncState("offline");
 		});
 
 		websocket.addEventListener("error", () => {
+			if (!isCurrent || websocketRef.current !== websocket) {
+				return;
+			}
+
 			setLastError("Realtime service is unavailable.");
 			setSyncState("offline");
 		});
 
 		return () => {
+			isCurrent = false;
 			sendPresenceUpdate(null, true);
 			websocket.close();
-			websocketRef.current = null;
+			if (websocketRef.current === websocket) {
+				websocketRef.current = null;
+			}
 		};
 	}, [diagramId, doc, schedulePersistedSync, sendPresenceUpdate]);
 

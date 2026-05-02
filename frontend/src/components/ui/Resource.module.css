@@ -1,37 +1,47 @@
 .grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
-	gap: 14px;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+	gap: 16px;
 }
 
 .card {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
-	align-items: start;
-	gap: 14px;
-	min-height: 132px;
+	align-content: start;
+	gap: 13px;
+	min-height: 142px;
 	padding: 16px;
 	border: var(--border-width) solid var(--border);
-	border-radius: var(--border-radius);
-	background: linear-gradient(180deg, oklch(0.2 0.02 240 / 0.96), var(--bg-card));
+	border-radius: 8px;
+	background: linear-gradient(180deg, oklch(0.22 0.022 240 / 0.96), oklch(0.165 0.018 240 / 0.98)), var(--bg-card);
 	box-shadow: var(--shadow-tight);
 	transition:
 		border-color 0.16s ease,
+		box-shadow 0.16s ease,
 		transform 0.16s ease;
 }
 
 .card:hover {
 	border-color: var(--border-hi);
+	box-shadow: 0 16px 34px oklch(0.05 0.015 240 / 0.34);
 	transform: translateY(-1px);
+}
+
+.content {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 13px;
+	min-width: 0;
 }
 
 .icon {
 	display: inline-grid;
 	width: 38px;
 	height: 38px;
+	flex: 0 0 auto;
 	place-items: center;
 	border: 1px solid oklch(0.72 0.16 150 / 0.28);
-	border-radius: 10px;
+	border-radius: 8px;
 	background: var(--primary-dim);
 	color: var(--primary-glow);
 }
@@ -45,8 +55,9 @@
 .body h2 {
 	overflow: hidden;
 	color: var(--text-main);
-	font-size: 1rem;
+	font-size: 0.98rem;
 	font-weight: 800;
+	line-height: 1.25;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
@@ -54,8 +65,11 @@
 .body p {
 	overflow: hidden;
 	color: var(--text-sub);
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	display: -webkit-box;
+	font-size: 0.9rem;
+	line-height: 1.35;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
 }
 
 .actions {
@@ -64,19 +78,21 @@
 	justify-content: flex-end;
 	flex-wrap: wrap;
 	gap: 8px;
+	min-width: 0;
+	padding-top: 12px;
+	border-top: 1px solid oklch(0.28 0.02 240 / 0.74);
+}
+
+.actions > :is(a, button) {
+	flex: 0 0 auto;
 }
 
 .cardMessage {
-	grid-column: 1 / -1;
+	min-width: 0;
 }
 
 @media (max-width: 640px) {
-	.card {
-		grid-template-columns: auto minmax(0, 1fr);
-	}
-
 	.actions {
-		grid-column: 1 / -1;
 		justify-content: flex-start;
 	}
 }
