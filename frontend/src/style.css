@@ -1080,9 +1080,11 @@ textarea:focus {
 
 .react-flow__node-comment {
 	border: 0;
+	backface-visibility: hidden;
 	background: transparent;
 	box-shadow: none;
 	padding: 0;
+	will-change: transform;
 }
 
 .diagram-comment-node {
@@ -1099,6 +1101,7 @@ textarea:focus {
 	box-shadow: 0 16px 34px oklch(0.05 0.02 240 / 0.32);
 	color: var(--text-main);
 	overflow: hidden;
+	transform: translateZ(0);
 }
 
 .diagram-comment-node.selected {

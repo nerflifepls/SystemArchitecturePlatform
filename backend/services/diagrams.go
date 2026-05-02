@@ -155,6 +155,8 @@ func (service *DiagramService) ListUpdates(ctx context.Context, actorUserID uuid
 	}
 	if afterSeq < 0 {
 		afterSeq = diagram.SnapshotBaseUpdateSeq
+	} else if afterSeq < diagram.SnapshotBaseUpdateSeq {
+		return nil, 0, Conflict("update sequence is older than the compacted snapshot; reload the diagram snapshot")
 	}
 	updates, listErr := service.diagrams.ListDiagramUpdates(ctx, diagramID, afterSeq)
 	if listErr != nil {

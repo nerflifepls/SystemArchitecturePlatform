@@ -73,6 +73,7 @@ type DiagramNodeData = StoredNodeData & {
 	size?: CommentSize;
 	shouldFocus?: boolean;
 	onDelete?: (commentId: string) => void;
+	onFocusHandled?: (commentId: string) => void;
 	onResize?: (commentId: string, size: CommentSize) => void;
 	onTextChange?: (commentId: string, text: string) => void;
 };
@@ -107,6 +108,12 @@ type StoredComment = {
 	authorUserId?: string;
 	createdAt: string;
 	updatedAt?: string;
+};
+
+type DiagramSharedMaps = {
+	nodes: Y.Map<StoredNode>;
+	edges: Y.Map<StoredEdge>;
+	comments: Y.Map<StoredComment>;
 };
 
 type SyncState = "loading" | "live" | "saving" | "offline" | "error";
@@ -254,6 +261,55 @@ function positionsEqual(left: FlowPosition | undefined, right: FlowPosition) {
 	return Boolean(left && left.x === right.x && left.y === right.y);
 }
 
+function commentSizesEqual(left: CommentSize | undefined, right: CommentSize | undefined) {
+	const leftSize = left ?? COMMENT_DEFAULT_SIZE;
+	const rightSize = right ?? COMMENT_DEFAULT_SIZE;
+
+	return leftSize.width === rightSize.width && leftSize.height === rightSize.height;
+}
+
+function commentNodeDataMatches(
+	data: DiagramNodeData,
+	comment: StoredComment,
+	size: CommentSize,
+	shouldFocus: boolean,
+) {
+	return (
+		data.text === comment.text &&
+		data.authorName === comment.authorName &&
+		data.createdAt === comment.createdAt &&
+		data.updatedAt === comment.updatedAt &&
+		data.shouldFocus === shouldFocus &&
+		commentSizesEqual(data.size, size)
+	);
+}
+
+function areDiagramComponentNodePropsEqual(
+	previous: NodeProps<Node<DiagramNodeData, "default">>,
+	next: NodeProps<Node<DiagramNodeData, "default">>,
+) {
+	return (
+		previous.selected === next.selected &&
+		previous.data.label === next.data.label &&
+		previous.data.kind === next.data.kind
+	);
+}
+
+function areCommentNodePropsEqual(
+	previous: NodeProps<Node<DiagramNodeData, "comment">>,
+	next: NodeProps<Node<DiagramNodeData, "comment">>,
+) {
+	return (
+		previous.selected === next.selected &&
+		previous.data.text === next.data.text &&
+		previous.data.authorName === next.data.authorName &&
+		previous.data.createdAt === next.data.createdAt &&
+		previous.data.updatedAt === next.data.updatedAt &&
+		previous.data.shouldFocus === next.data.shouldFocus &&
+		commentSizesEqual(previous.data.size, next.data.size)
+	);
+}
+
 function snapNodePosition(nodeId: string, position: FlowPosition, currentNodes: DiagramNode[]) {
 	let snappedX = position.x;
 	let snappedY = position.y;
@@ -348,10 +404,11 @@ const DiagramComponentNode = memo(function DiagramComponentNode({
 			<strong>{data.label}</strong>
 		</div>
 	);
-});
+}, areDiagramComponentNodePropsEqual);
 
 const CommentNode = memo(function CommentNode({ id, data, selected }: NodeProps<Node<DiagramNodeData, "comment">>) {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const focusHandledRef = useRef(false);
 	const size = clampCommentSize(data.size ?? COMMENT_DEFAULT_SIZE);
 	const timestamp = data.updatedAt ?? data.createdAt ?? new Date().toISOString();
 
@@ -384,10 +441,19 @@ const CommentNode = memo(function CommentNode({ id, data, selected }: NodeProps<
 	}
 
 	useEffect(() => {
-		if (data.shouldFocus) {
-			textareaRef.current?.focus();
+		if (!data.shouldFocus) {
+			focusHandledRef.current = false;
+			return;
 		}
-	}, [data.shouldFocus]);
+
+		if (focusHandledRef.current) {
+			return;
+		}
+
+		focusHandledRef.current = true;
+		textareaRef.current?.focus();
+		data.onFocusHandled?.(id);
+	}, [data.onFocusHandled, data.shouldFocus, id]);
 
 	return (
 		<article
@@ -427,7 +493,7 @@ const CommentNode = memo(function CommentNode({ id, data, selected }: NodeProps<
 			/>
 		</article>
 	);
-});
+}, areCommentNodePropsEqual);
 
 function makeDefaultNodes(): StoredNode[] {
 	return [
@@ -479,6 +545,24 @@ function toArrayBuffer(bytes: Uint8Array) {
 	return copy.buffer;
 }
 
+function encodeCompactedSnapshot(sourceMaps: DiagramSharedMaps) {
+	const compactedDoc = new Y.Doc();
+	const compactedNodes = compactedDoc.getMap<StoredNode>("nodes");
+	const compactedEdges = compactedDoc.getMap<StoredEdge>("edges");
+	const compactedComments = compactedDoc.getMap<StoredComment>("comments");
+	compactedDoc.getMap("docs");
+
+	compactedDoc.transact(() => {
+		sourceMaps.nodes.forEach((node, nodeId) => compactedNodes.set(nodeId, node));
+		sourceMaps.edges.forEach((edge, edgeId) => compactedEdges.set(edgeId, edge));
+		sourceMaps.comments.forEach((comment, commentId) => compactedComments.set(commentId, comment));
+	}, INIT_ORIGIN);
+
+	const snapshot = Y.encodeStateAsUpdate(compactedDoc);
+	compactedDoc.destroy();
+	return snapshot;
+}
+
 export function DiagramEditorPage() {
 	const { workspaceId = "", projectId = "", diagramId = "" } = useParams();
 	const doc = useMemo(() => new Y.Doc({ guid: diagramId }), [diagramId]);
@@ -507,6 +591,7 @@ export function DiagramEditorPage() {
 	const nodesRef = useRef<DiagramNode[]>([]);
 	const edgesRef = useRef<DiagramEdge[]>([]);
 	const commentsRef = useRef<StoredComment[]>([]);
+	const commentNodeCacheRef = useRef<Map<string, DiagramNode>>(new Map());
 	const canvasFrameRef = useRef<HTMLDivElement | null>(null);
 	const websocketRef = useRef<WebSocket | null>(null);
 	const reactFlowInstanceRef = useRef<ReactFlowInstance<DiagramNode, DiagramEdge> | null>(null);
@@ -668,8 +753,16 @@ export function DiagramEditorPage() {
 		mutationFn: async () => {
 			await waitForPendingUpdates();
 			const baseUpdateSeq = await syncPersistedUpdates();
+			// Fresh compaction rewrites Yjs item IDs, so avoid it while another editor may still emit old-document updates.
+			const shouldCompactSnapshot = editorConnections.length <= 1;
+			const snapshotBytes = shouldCompactSnapshot ? encodeCompactedSnapshot(maps) : Y.encodeStateAsUpdate(doc);
+			const result = await crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current);
 
-			return crdtApi.saveSnapshot(diagramId, Y.encodeStateAsUpdate(doc), baseUpdateSeq, clientIdRef.current);
+			if (shouldCompactSnapshot) {
+				Y.applyUpdate(doc, snapshotBytes, REMOTE_ORIGIN);
+			}
+
+			return result;
 		},
 		onMutate: () => setSyncState("saving"),
 		onSuccess: () => setSyncState(websocketRef.current?.readyState === WebSocket.OPEN ? "live" : "offline"),
@@ -964,7 +1057,9 @@ export function DiagramEditorPage() {
 							break;
 						case "position":
 							if (change.position) {
-								changedNodeIds.add(change.id);
+								if (change.dragging !== true) {
+									changedNodeIds.add(change.id);
+								}
 							}
 							break;
 						case "remove":
@@ -1025,6 +1120,15 @@ export function DiagramEditorPage() {
 
 			if (commentChanges.length === 0) {
 				return;
+			}
+
+			if (commentNodeCacheRef.current.size > 0) {
+				const nextCachedCommentNodes = applyNodeChanges(
+					commentChanges,
+					Array.from(commentNodeCacheRef.current.values()),
+				);
+
+				commentNodeCacheRef.current = new Map(nextCachedCommentNodes.map((node) => [node.id, node]));
 			}
 
 			const changedCommentIds = new Set<string>();
@@ -1409,6 +1513,41 @@ export function DiagramEditorPage() {
 		[doc, maps.comments],
 	);
 
+	const clearFocusedComment = useCallback((commentId: string) => {
+		setFocusedCommentId((currentCommentId) => (currentCommentId === commentId ? null : currentCommentId));
+	}, []);
+
+	const persistNodePosition = useCallback(
+		(nodeId: string, position: FlowPosition) => {
+			const currentNode = nodesRef.current.find((node) => node.id === nodeId);
+
+			if (!currentNode) {
+				return;
+			}
+
+			const nextPosition = snapNodePosition(nodeId, position, nodesRef.current);
+			const storedNode = maps.nodes.get(nodeId);
+
+			if (storedNode && positionsEqual(storedNode.position, nextPosition)) {
+				return;
+			}
+
+			const updatedNode = { ...currentNode, position: nextPosition };
+
+			if (!positionsEqual(currentNode.position, nextPosition)) {
+				const nextNodes = nodesRef.current.map((node) => (node.id === nodeId ? updatedNode : node));
+
+				nodesRef.current = nextNodes;
+				setNodes(nextNodes);
+			}
+
+			doc.transact(() => {
+				maps.nodes.set(nodeId, toStoredNode(updatedNode));
+			}, LOCAL_ORIGIN);
+		},
+		[doc, maps.nodes],
+	);
+
 	const persistCommentPosition = useCallback(
 		(commentId: string, position: FlowPosition) => {
 			const currentComment = commentsRef.current.find((comment) => comment.id === commentId);
@@ -1460,31 +1599,62 @@ export function DiagramEditorPage() {
 		[doc, maps.comments],
 	);
 
-	const flowNodes = useMemo(
-		() => [
-			...nodes,
-			...(comments.map((comment, index) => ({
-				id: comment.id,
-				type: "comment",
-				position: comment.position ?? getFallbackCommentPosition(index),
-				style: comment.size ?? COMMENT_DEFAULT_SIZE,
-				data: {
-					label: "Comment",
-					kind: "comment",
-					size: comment.size ?? COMMENT_DEFAULT_SIZE,
-					text: comment.text,
-					authorName: comment.authorName,
-					createdAt: comment.createdAt,
-					updatedAt: comment.updatedAt,
-					shouldFocus: focusedCommentId === comment.id,
-					onDelete: removeComment,
-					onResize: updateCommentSize,
-					onTextChange: updateCommentText,
-				},
-			})) satisfies DiagramNode[]),
-		],
-		[comments, focusedCommentId, nodes, removeComment, updateCommentSize, updateCommentText],
-	);
+	const flowNodes = useMemo(() => {
+		const previousCommentNodes = commentNodeCacheRef.current;
+		const nextCommentNodes = new Map<string, DiagramNode>();
+		const commentFlowNodes = comments.map((comment, index) => {
+			const previousNode = previousCommentNodes.get(comment.id);
+			const position = comment.position ?? getFallbackCommentPosition(index);
+			const size = comment.size ?? COMMENT_DEFAULT_SIZE;
+			const shouldFocus = focusedCommentId === comment.id;
+			const data =
+				previousNode && commentNodeDataMatches(previousNode.data, comment, size, shouldFocus) ?
+					previousNode.data
+				:	{
+						label: "Comment",
+						kind: "comment",
+						size,
+						text: comment.text,
+						authorName: comment.authorName,
+						createdAt: comment.createdAt,
+						updatedAt: comment.updatedAt,
+						shouldFocus,
+						onDelete: removeComment,
+						onFocusHandled: clearFocusedComment,
+						onResize: updateCommentSize,
+						onTextChange: updateCommentText,
+					};
+			const style = previousNode && commentSizesEqual(previousNode.data.size, size) ? previousNode.style : size;
+			const nextNode =
+				(
+					previousNode &&
+					positionsEqual(previousNode.position, position) &&
+					previousNode.data === data &&
+					previousNode.style === style
+				) ?
+					previousNode
+				: previousNode ?
+					{
+						...previousNode,
+						position,
+						style,
+						data,
+					}
+				:	{
+						id: comment.id,
+						type: "comment",
+						position,
+						style,
+						data,
+					};
+
+			nextCommentNodes.set(comment.id, nextNode);
+			return nextNode;
+		});
+
+		commentNodeCacheRef.current = nextCommentNodes;
+		return [...nodes, ...commentFlowNodes];
+	}, [clearFocusedComment, comments, focusedCommentId, nodes, removeComment, updateCommentSize, updateCommentText]);
 
 	useEffect(() => {
 		setNodeLabelDraft(selectedNode?.data.label ?? "");
@@ -1543,7 +1713,10 @@ export function DiagramEditorPage() {
 							onNodeDragStop={(_, node) => {
 								if (isCommentNodeId(node.id)) {
 									persistCommentPosition(node.id, node.position);
+									return;
 								}
+
+								persistNodePosition(node.id, node.position);
 							}}
 							edgesReconnectable
 							onPaneClick={(event) => {

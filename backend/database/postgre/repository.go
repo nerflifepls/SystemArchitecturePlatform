@@ -430,7 +430,13 @@ func (repository *Repository) DeleteDiagram(ctx context.Context, diagramID uuid.
 }
 
 func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID uuid.UUID, snapshotBytes []byte, baseUpdateSeq int64) (domain.Diagram, error) {
-	row := repository.pool.QueryRow(ctx, `
+	transaction, beginErr := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if beginErr != nil {
+		return domain.Diagram{}, mapPostgresError(beginErr)
+	}
+	defer rollbackUnlessCommitted(ctx, transaction)
+
+	row := transaction.QueryRow(ctx, `
 		update diagrams
 		set snapshot_bytes = $2,
 			snapshot_version = snapshot_version + 1,
@@ -443,7 +449,7 @@ func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID
 	if scanErr != nil {
 		if errors.Is(scanErr, pgx.ErrNoRows) {
 			var exists bool
-			existsErr := repository.pool.QueryRow(ctx, `select exists(select 1 from diagrams where id = $1)`, diagramID).Scan(&exists)
+			existsErr := transaction.QueryRow(ctx, `select exists(select 1 from diagrams where id = $1)`, diagramID).Scan(&exists)
 			if existsErr != nil {
 				return domain.Diagram{}, mapPostgresError(existsErr)
 			}
@@ -453,6 +459,16 @@ func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID
 			return domain.Diagram{}, domain.ErrConflict
 		}
 		return domain.Diagram{}, mapPostgresError(scanErr)
+	}
+	_, deleteErr := transaction.Exec(ctx, `
+		delete from diagram_updates
+		where diagram_id = $1 and seq <= $2
+	`, diagramID, baseUpdateSeq)
+	if deleteErr != nil {
+		return domain.Diagram{}, mapPostgresError(deleteErr)
+	}
+	if commitErr := transaction.Commit(ctx); commitErr != nil {
+		return domain.Diagram{}, mapPostgresError(commitErr)
 	}
 	return diagram, nil
 }
