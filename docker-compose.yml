@@ -3,9 +3,11 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8081}
-        VITE_LIVE_WS_URL: ${VITE_LIVE_WS_URL:-ws://localhost:8080/ws}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://spyropoulosilias.dev}
+        VITE_LIVE_WS_URL: ${VITE_LIVE_WS_URL:-wss://spyropoulosilias.dev/ws}
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    expose:
+      - "80"
     depends_on:
       - backend
       - liveeventsservice
@@ -20,12 +22,12 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SESSION_COOKIE_NAME: sid
       SESSION_TTL: 720h
-      SESSION_COOKIE_SECURE: "false"
-      FRONTEND_ORIGIN: http://localhost:5173
+      SESSION_COOKIE_SECURE: "true"
+      FRONTEND_ORIGIN: https://spyropoulosilias.dev
       BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:-local-internal-token}
-      LIVE_EVENTS_PUBLIC_URL: ${VITE_LIVE_WS_URL:-ws://localhost:8080/ws}
-    ports:
-      - "8081:8081"
+      LIVE_EVENTS_PUBLIC_URL: wss://spyropoulosilias.dev/ws
+    expose:
+      - "8081"
     depends_on:
       redis:
         condition: service_healthy
@@ -40,10 +42,10 @@ services:
       REDIS_ADDR: redis:6379
       BACKEND_INTERNAL_URL: http://backend:8081
       BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN:-local-internal-token}
-      FRONTEND_ORIGIN: http://localhost:5173
+      FRONTEND_ORIGIN: https://spyropoulosilias.dev
       SESSION_COOKIE_NAME: sid
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     depends_on:
       backend:
         condition: service_started
