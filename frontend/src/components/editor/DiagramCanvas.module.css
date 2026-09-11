@@ -57,6 +57,7 @@
 :global(.react-flow__edge-path) {
 	stroke: var(--primary);
 	stroke-width: 2.2;
+	stroke-linecap: round;
 	filter: drop-shadow(0 2px 5px oklch(0.72 0.16 150 / 0.18));
 }
 

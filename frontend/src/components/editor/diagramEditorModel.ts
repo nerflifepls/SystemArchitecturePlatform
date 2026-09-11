@@ -25,6 +25,8 @@ export type DiagramNodeData = StoredNodeData & {
 export type DiagramNode = Node<DiagramNodeData>;
 export type DiagramEdge = Edge;
 
+export const DIAGRAM_EDGE_TYPE = "straight" as const;
+
 export type StoredNode = {
 	id: string;
 	type?: string;
@@ -141,7 +143,7 @@ export function toStoredEdge(edge: DiagramEdge): StoredEdge {
 		target: edge.target,
 		sourceHandle: edge.sourceHandle ?? undefined,
 		targetHandle: edge.targetHandle ?? undefined,
-		type: edge.type,
+		type: DIAGRAM_EDGE_TYPE,
 		label: typeof edge.label === "string" ? edge.label : undefined,
 		animated: edge.animated,
 	};
@@ -154,7 +156,7 @@ export function toFlowEdge(edge: StoredEdge): DiagramEdge {
 		target: edge.target,
 		sourceHandle: edge.sourceHandle,
 		targetHandle: edge.targetHandle,
-		type: edge.type ?? "smoothstep",
+		type: DIAGRAM_EDGE_TYPE,
 		label: edge.label,
 		animated: edge.animated,
 	};
@@ -282,7 +284,7 @@ export function makeDefaultEdges(): StoredEdge[] {
 			id: "edge-client-api",
 			source: "node-client",
 			target: "node-api",
-			type: "smoothstep",
+			type: DIAGRAM_EDGE_TYPE,
 			label: "HTTPS",
 		},
 	];

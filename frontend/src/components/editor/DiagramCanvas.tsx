@@ -1,4 +1,12 @@
-import { Background, Controls, MiniMap, ReactFlow, ViewportPortal, type ReactFlowProps } from "@xyflow/react";
+import {
+	Background,
+	ConnectionLineType,
+	Controls,
+	MiniMap,
+	ReactFlow,
+	ViewportPortal,
+	type ReactFlowProps,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { MousePointer2 } from "lucide-react";
 import type { CSSProperties, RefObject } from "react";
@@ -50,6 +58,8 @@ export function DiagramCanvas({
 				<ReactFlow
 					nodes={nodes}
 					edges={edges}
+					connectionLineType={ConnectionLineType.Straight}
+					defaultEdgeOptions={{ type: "straight" }}
 					nodeTypes={nodeTypes}
 					onInit={onInit}
 					onNodesChange={onNodesChange}

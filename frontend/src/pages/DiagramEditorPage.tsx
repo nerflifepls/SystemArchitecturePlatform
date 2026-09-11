@@ -30,6 +30,7 @@ import {
 	clampCommentSize,
 	commentNodeDataMatches,
 	commentSizesEqual,
+	DIAGRAM_EDGE_TYPE,
 	getFallbackCommentPosition,
 	getNodeChangeId,
 	isCommentNodeId,
@@ -885,7 +886,7 @@ export function DiagramEditorPage() {
 				target: connection.target,
 				sourceHandle: connection.sourceHandle ?? undefined,
 				targetHandle: connection.targetHandle ?? undefined,
-				type: "smoothstep",
+				type: DIAGRAM_EDGE_TYPE,
 				label: "HTTPS",
 			};
 
