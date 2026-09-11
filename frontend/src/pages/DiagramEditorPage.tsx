@@ -94,6 +94,8 @@ type SnapshotIntent = {
 	reason: DiagramSnapshotDto["reason"];
 };
 
+const LIVE_UPDATE_PERSIST_DELAY_MS = 350;
+
 function haveSameSelectionIds(current: string[], next: string[]) {
 	return current.length === next.length && current.every((id, index) => id === next[index]);
 }
@@ -165,6 +167,7 @@ export function DiagramEditorPage() {
 	const pendingUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set());
 	const pendingQueueRef = useRef<QueuedDiagramUpdate[]>([]);
 	const pendingLiveUpdatesRef = useRef<Uint8Array[]>([]);
+	const pendingLiveFlushTimerRef = useRef<number | null>(null);
 	const queueFlushPromiseRef = useRef<Promise<void> | null>(null);
 	const pendingQueueLoadedRef = useRef(false);
 	const reconnectAttemptsRef = useRef(0);
@@ -573,6 +576,41 @@ export function DiagramEditorPage() {
 		}, 1400);
 	}, [saveSnapshot]);
 
+	const flushBufferedLiveUpdates = useCallback(
+		(trailingUpdate?: Uint8Array) => {
+			if (pendingLiveFlushTimerRef.current) {
+				window.clearTimeout(pendingLiveFlushTimerRef.current);
+				pendingLiveFlushTimerRef.current = null;
+			}
+
+			const bufferedUpdates = pendingLiveUpdatesRef.current;
+			pendingLiveUpdatesRef.current = [];
+			if (trailingUpdate) {
+				bufferedUpdates.push(new Uint8Array(trailingUpdate));
+			}
+			if (bufferedUpdates.length === 0) {
+				return;
+			}
+
+			enqueuePendingUpdate(
+				bufferedUpdates.length === 1 ? bufferedUpdates[0] : Y.mergeUpdates(bufferedUpdates),
+			);
+			scheduleSnapshotSave();
+		},
+		[enqueuePendingUpdate, scheduleSnapshotSave],
+	);
+
+	const scheduleBufferedLiveUpdateFlush = useCallback(() => {
+		if (pendingLiveFlushTimerRef.current) {
+			window.clearTimeout(pendingLiveFlushTimerRef.current);
+		}
+
+		pendingLiveFlushTimerRef.current = window.setTimeout(() => {
+			pendingLiveFlushTimerRef.current = null;
+			flushBufferedLiveUpdates();
+		}, LIVE_UPDATE_PERSIST_DELAY_MS);
+	}, [flushBufferedLiveUpdates]);
+
 	useEffect(() => {
 		const nodeObserver = (event: Y.YMapEvent<StoredNode>) => {
 			if (event.transaction.origin === LOCAL_ORIGIN || event.transaction.origin === LIVE_DRAG_ORIGIN) {
@@ -621,6 +659,10 @@ export function DiagramEditorPage() {
 		persistedUpdateSeqRef.current = 0;
 		pendingQueueRef.current = [];
 		pendingLiveUpdatesRef.current = [];
+		if (pendingLiveFlushTimerRef.current) {
+			window.clearTimeout(pendingLiveFlushTimerRef.current);
+			pendingLiveFlushTimerRef.current = null;
+		}
 		setPendingUpdateCount(0);
 		setLastUpdateSeq(0);
 		setSnapshotVersion(1);
@@ -730,15 +772,11 @@ export function DiagramEditorPage() {
 				if (websocketRef.current?.readyState === WebSocket.OPEN) {
 					websocketRef.current.send(toArrayBuffer(update));
 				}
+				scheduleBufferedLiveUpdateFlush();
 				return;
 			}
 
-			const pendingLiveUpdates = pendingLiveUpdatesRef.current;
-			pendingLiveUpdatesRef.current = [];
-			enqueuePendingUpdate(
-				pendingLiveUpdates.length > 0 ? Y.mergeUpdates([...pendingLiveUpdates, update]) : update,
-			);
-			scheduleSnapshotSave();
+			flushBufferedLiveUpdates(update);
 		};
 
 		doc.on("update", handleUpdate);
@@ -746,7 +784,23 @@ export function DiagramEditorPage() {
 		return () => {
 			doc.off("update", handleUpdate);
 		};
-	}, [doc, enqueuePendingUpdate, scheduleSnapshotSave]);
+	}, [doc, flushBufferedLiveUpdates, scheduleBufferedLiveUpdateFlush]);
+
+	useEffect(() => {
+		const handlePageHide = () => flushBufferedLiveUpdates();
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "hidden") {
+				flushBufferedLiveUpdates();
+			}
+		};
+
+		window.addEventListener("pagehide", handlePageHide);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => {
+			window.removeEventListener("pagehide", handlePageHide);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
+	}, [flushBufferedLiveUpdates]);
 
 	useEffect(() => {
 		if (!diagramId || !initialSyncReady) {
@@ -938,6 +992,7 @@ export function DiagramEditorPage() {
 			void flushPendingQueue().catch(() => undefined);
 		};
 		const handleOffline = () => {
+			flushBufferedLiveUpdates();
 			setSyncState("offline");
 			websocketRef.current?.close();
 		};
@@ -947,12 +1002,16 @@ export function DiagramEditorPage() {
 			window.removeEventListener("online", handleOnline);
 			window.removeEventListener("offline", handleOffline);
 		};
-	}, [flushPendingQueue]);
+	}, [flushBufferedLiveUpdates, flushPendingQueue]);
 
 	useEffect(() => {
 		return () => {
 			if (snapshotTimerRef.current) {
 				window.clearTimeout(snapshotTimerRef.current);
+			}
+
+			if (pendingLiveFlushTimerRef.current) {
+				window.clearTimeout(pendingLiveFlushTimerRef.current);
 			}
 
 			if (persistedSyncTimerRef.current) {

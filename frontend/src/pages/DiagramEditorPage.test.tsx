@@ -96,7 +96,7 @@ class IdleWebSocket {
 	}
 }
 
-describe("DiagramEditorPage selection integration", () => {
+describe("DiagramEditorPage integration", () => {
 	beforeEach(() => {
 		canvasProbe.renderCount = 0;
 		canvasProbe.selectionHandlers.clear();
@@ -230,5 +230,103 @@ describe("DiagramEditorPage selection integration", () => {
 			height: 460,
 		});
 		restoredDoc.destroy();
+	});
+
+	it("keeps the latest boundary size after a cold reconnect when resize-end is missed", async () => {
+		const initialDoc = new Y.Doc();
+		initialDoc.getMap<StoredNode>("nodes").set("boundary", {
+			id: "boundary",
+			type: "boundary",
+			position: { x: 40, y: 60 },
+			data: { label: "System boundary", kind: "boundary" },
+			size: { width: 440, height: 280 },
+		});
+		const initialSnapshot = Y.encodeStateAsUpdate(initialDoc);
+		initialDoc.destroy();
+
+		vi.mocked(diagramApi.get).mockResolvedValueOnce({
+			id: "diagram-1",
+			projectId: "project-1",
+			title: "Resizable boundary",
+			role: "editor",
+			snapshotVersion: 1,
+			lastUpdateSeq: 0,
+		});
+		vi.mocked(crdtApi.getSnapshot).mockResolvedValueOnce(initialSnapshot);
+		vi.mocked(crdtApi.postUpdate)
+			.mockResolvedValueOnce({
+				seq: 1,
+				updateId: "update-1",
+				acceptedAt: new Date().toISOString(),
+			})
+			.mockResolvedValueOnce({
+				seq: 2,
+				updateId: "update-2",
+				acceptedAt: new Date().toISOString(),
+			});
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter
+					initialEntries={[
+						"/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor",
+					]}
+				>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() =>
+			expect(canvasProbe.latestNodes.some((node) => node.id === "boundary")).toBe(true),
+		);
+		const onNodesChange = canvasProbe.onNodesChange;
+		expect(onNodesChange).toBeDefined();
+
+		act(() => {
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "dimensions",
+					dimensions: { width: 720, height: 480 },
+					resizing: true,
+					setAttributes: true,
+				},
+			]);
+		});
+
+		await waitFor(() => expect(crdtApi.postUpdate).toHaveBeenCalledTimes(1));
+
+		act(() => {
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "dimensions",
+					dimensions: { width: 760, height: 510 },
+					resizing: true,
+					setAttributes: true,
+				},
+			]);
+			window.dispatchEvent(new Event("pagehide"));
+		});
+
+		await waitFor(() => expect(crdtApi.postUpdate).toHaveBeenCalledTimes(2));
+		const coldReconnectDoc = new Y.Doc();
+		Y.applyUpdate(coldReconnectDoc, initialSnapshot);
+		for (const call of vi.mocked(crdtApi.postUpdate).mock.calls) {
+			Y.applyUpdate(coldReconnectDoc, call[1]);
+		}
+
+		expect(coldReconnectDoc.getMap<StoredNode>("nodes").get("boundary")?.size).toEqual({
+			width: 760,
+			height: 510,
+		});
+		coldReconnectDoc.destroy();
 	});
 });
