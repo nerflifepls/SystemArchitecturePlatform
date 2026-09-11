@@ -3,16 +3,18 @@ import { Edit3, FolderKanban, Save, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { projectApi } from "../../api/endpoints";
-import type { ProjectDto } from "../../api/types";
+import type { ProjectDto, WorkspaceRole } from "../../api/types";
 import { Button, ButtonLink, FormError, FormField, ResourceCard, ResourceCardBody } from "../ui";
 import { getErrorMessage } from "../../utils/errors";
+import { canDeleteWorkspaceContent, canEditWorkspaceContent } from "../../utils/roles";
 
 type ProjectCardProps = {
 	project: ProjectDto;
 	workspaceId: string;
+	role?: WorkspaceRole;
 };
 
-export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
+export function ProjectCard({ project, workspaceId, role }: ProjectCardProps) {
 	const queryClient = useQueryClient();
 	const [isEditing, setIsEditing] = useState(false);
 	const [name, setName] = useState(project.name);
@@ -51,7 +53,7 @@ export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
 					<ButtonLink size="compact" to={`/workspaces/${workspaceId}/projects/${project.id}`}>
 						Open
 					</ButtonLink>
-					<Button
+					{canEditWorkspaceContent(role) ? <Button
 						variant="icon"
 						size="compact"
 						type="button"
@@ -59,8 +61,8 @@ export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
 						aria-label="Edit project"
 					>
 						<Edit3 size={16} />
-					</Button>
-					<Button
+					</Button> : null}
+					{canDeleteWorkspaceContent(role) ? <Button
 						variant="icon"
 						size="compact"
 						tone="danger"
@@ -69,7 +71,7 @@ export function ProjectCard({ project, workspaceId }: ProjectCardProps) {
 						aria-label="Delete project"
 					>
 						<Trash2 size={16} />
-					</Button>
+					</Button> : null}
 				</>
 			}
 			message={

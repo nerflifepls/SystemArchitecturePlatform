@@ -17,6 +17,7 @@ import {
 	ToolPanel,
 } from "../components/ui";
 import { getErrorMessage } from "../utils/errors";
+import { canDeleteWorkspace } from "../utils/roles";
 
 export function DashboardPage() {
 	const queryClient = useQueryClient();
@@ -100,7 +101,7 @@ export function DashboardPage() {
 								<ButtonLink size="compact" to={`/workspaces/${workspace.id}`}>
 									Open
 								</ButtonLink>
-								<Button
+								{canDeleteWorkspace(workspace.role) ? <Button
 									variant="icon"
 									size="compact"
 									tone="danger"
@@ -109,7 +110,7 @@ export function DashboardPage() {
 									aria-label={`Delete ${workspace.name}`}
 								>
 									<Trash2 size={16} />
-								</Button>
+								</Button> : null}
 							</>
 						}
 					>

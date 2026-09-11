@@ -15,6 +15,7 @@ export type DiagramNodeData = StoredNodeData & {
 	updatedAt?: string;
 	size?: CommentSize;
 	shouldFocus?: boolean;
+	readOnly?: boolean;
 	onDelete?: (commentId: string) => void;
 	onFocusHandled?: (commentId: string) => void;
 	onResize?: (commentId: string, size: CommentSize) => void;
@@ -217,6 +218,7 @@ export function commentNodeDataMatches(
 	comment: StoredComment,
 	size: CommentSize,
 	shouldFocus: boolean,
+	readOnly: boolean,
 ) {
 	return (
 		data.text === comment.text &&
@@ -224,6 +226,7 @@ export function commentNodeDataMatches(
 		data.createdAt === comment.createdAt &&
 		data.updatedAt === comment.updatedAt &&
 		data.shouldFocus === shouldFocus &&
+		data.readOnly === readOnly &&
 		commentSizesEqual(data.size, size)
 	);
 }

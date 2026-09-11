@@ -55,6 +55,15 @@ func newConnection(id string, diagramID string, role string, userSession session
 	}
 }
 
+func canEditRole(role string) bool {
+	switch role {
+	case "owner", "admin", "editor":
+		return true
+	default:
+		return false
+	}
+}
+
 func (connection *Connection) enqueue(message outboundMessage) bool {
 	connection.sendMu.RLock()
 	defer connection.sendMu.RUnlock()

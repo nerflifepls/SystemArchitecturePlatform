@@ -19,7 +19,12 @@ import {
 } from "../components/ui";
 import { MemberRow } from "../components/workspaces/MemberRow";
 import { getErrorMessage } from "../utils/errors";
-import { canManageWorkspaceMembers, inviteRoleOptions, type InviteRole } from "../utils/roles";
+import {
+	canEditWorkspaceContent,
+	canManageWorkspaceMembers,
+	inviteRoleOptions,
+	type InviteRole,
+} from "../utils/roles";
 
 export function WorkspacePage() {
 	const { workspaceId = "" } = useParams();
@@ -131,6 +136,7 @@ export function WorkspacePage() {
 	}
 
 	const canManageMembers = canManageWorkspaceMembers(workspaceQuery.data?.role);
+	const canEditContent = canEditWorkspaceContent(workspaceQuery.data?.role);
 	const ownerCount = membersQuery.data?.filter((member) => member.role === "owner").length ?? 0;
 
 	return (
@@ -150,7 +156,7 @@ export function WorkspacePage() {
 				<ErrorPanel>{getErrorMessage(workspaceQuery.error)}</ErrorPanel>
 			:	null}
 
-			<ToolPanel aria-labelledby="workspace-settings-title">
+			{canManageMembers ? <ToolPanel aria-labelledby="workspace-settings-title">
 				<div>
 					<h2 id="workspace-settings-title">Workspace details</h2>
 					<p className="muted-copy">Update the workspace name shown to collaborators.</p>
@@ -171,7 +177,7 @@ export function WorkspacePage() {
 				{updateWorkspace.isError ?
 					<FormError>{getErrorMessage(updateWorkspace.error)}</FormError>
 				:	null}
-			</ToolPanel>
+			</ToolPanel> : null}
 
 			<ToolPanel className="members-panel" aria-labelledby="workspace-members-title">
 				<div>
@@ -252,7 +258,7 @@ export function WorkspacePage() {
 				</div>
 			</ToolPanel>
 
-			<ToolPanel aria-labelledby="new-project-title">
+			{canEditContent ? <ToolPanel aria-labelledby="new-project-title">
 				<div>
 					<h2 id="new-project-title">New project</h2>
 					<p className="muted-copy">Projects group diagrams for one design effort.</p>
@@ -279,7 +285,7 @@ export function WorkspacePage() {
 				{createProject.isError ?
 					<FormError>{getErrorMessage(createProject.error)}</FormError>
 				:	null}
-			</ToolPanel>
+			</ToolPanel> : null}
 
 			{projectsQuery.isError ?
 				<ErrorPanel>{getErrorMessage(projectsQuery.error)}</ErrorPanel>
@@ -293,7 +299,12 @@ export function WorkspacePage() {
 				emptyMessage="No projects yet."
 			>
 				{projectsQuery.data?.map((project) => (
-					<ProjectCard key={project.id} project={project} workspaceId={workspaceId} />
+					<ProjectCard
+						key={project.id}
+						project={project}
+						workspaceId={workspaceId}
+						role={workspaceQuery.data?.role}
+					/>
 				))}
 			</ResourceGrid>
 		</div>

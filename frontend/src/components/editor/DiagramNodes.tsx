@@ -34,6 +34,7 @@ function areCommentNodePropsEqual(
 		previous.data.createdAt === next.data.createdAt &&
 		previous.data.updatedAt === next.data.updatedAt &&
 		previous.data.shouldFocus === next.data.shouldFocus &&
+		previous.data.readOnly === next.data.readOnly &&
 		commentSizesEqual(previous.data.size, next.data.size)
 	);
 }
@@ -117,6 +118,10 @@ export const CommentNode = memo(function CommentNode({
 	const timestamp = data.updatedAt ?? data.createdAt ?? new Date().toISOString();
 
 	function handleResizeStart(event: PointerEvent<HTMLSpanElement>) {
+		if (data.readOnly) {
+			return;
+		}
+
 		event.preventDefault();
 		event.stopPropagation();
 
@@ -169,32 +174,37 @@ export const CommentNode = memo(function CommentNode({
 					<strong>{data.authorName ?? "Collaborator"}</strong>
 					<time dateTime={timestamp}>{formatCommentTimestamp(timestamp)}</time>
 				</div>
-				<button
-					className={classNames("icon-button danger nodrag nopan", styles.deleteButton)}
-					type="button"
-					onClick={(event) => {
-						event.stopPropagation();
-						data.onDelete?.(id);
-					}}
-					aria-label="Delete comment"
-					title="Delete comment"
-				>
-					<Trash2 size={14} />
-				</button>
+				{!data.readOnly ?
+					<button
+						className={classNames("icon-button danger nodrag nopan", styles.deleteButton)}
+						type="button"
+						onClick={(event) => {
+							event.stopPropagation();
+							data.onDelete?.(id);
+						}}
+						aria-label="Delete comment"
+						title="Delete comment"
+					>
+						<Trash2 size={14} />
+					</button>
+				: null}
 			</header>
 			<textarea
 				ref={textareaRef}
 				className={classNames(styles.commentTextarea, "nodrag", "nopan")}
 				value={data.text ?? ""}
+				readOnly={data.readOnly}
 				onChange={(event) => data.onTextChange?.(id, event.target.value)}
 				onPointerDown={(event) => event.stopPropagation()}
 				placeholder="Comment"
 			/>
-			<span
-				className={classNames(styles.resizeHandle, "nodrag", "nopan")}
-				onPointerDown={handleResizeStart}
-				aria-label="Resize comment"
-			/>
+			{!data.readOnly ?
+				<span
+					className={classNames(styles.resizeHandle, "nodrag", "nopan")}
+					onPointerDown={handleResizeStart}
+					aria-label="Resize comment"
+				/>
+			: null}
 		</article>
 	);
 }, areCommentNodePropsEqual);

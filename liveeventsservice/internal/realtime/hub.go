@@ -144,6 +144,18 @@ func (hub *Hub) Close(ctx context.Context) {
 
 // HandleBinary relays a Yjs update locally and through Redis pub/sub.
 func (hub *Hub) HandleBinary(ctx context.Context, connection *Connection, payload []byte) {
+	if !canEditRole(connection.Role) {
+		connection.enqueue(outboundMessage{
+			messageType: websocket.TextMessage,
+			payload: encodeJSON(errorMessage{
+				Type:    "error",
+				Code:    "editor_role_required",
+				Message: "editor role is required to update this diagram",
+			}),
+		})
+		return
+	}
+
 	messagePayload := append([]byte(nil), payload...)
 	hub.broadcastBinary(connection.DiagramID, messagePayload, connection.ID)
 

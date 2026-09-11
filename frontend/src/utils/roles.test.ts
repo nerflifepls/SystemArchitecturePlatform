@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	canDeleteWorkspace,
+	canDeleteWorkspaceContent,
+	canEditWorkspaceContent,
 	canManageWorkspaceMembers,
 	getMemberInitials,
 	inviteRoleOptions,
@@ -27,5 +30,17 @@ describe("role helpers", () => {
 		expect(canManageWorkspaceMembers("editor")).toBe(false);
 		expect(canManageWorkspaceMembers("viewer")).toBe(false);
 		expect(canManageWorkspaceMembers(undefined)).toBe(false);
+	});
+
+	it("matches content permissions enforced by the API", () => {
+		expect(canEditWorkspaceContent("owner")).toBe(true);
+		expect(canEditWorkspaceContent("admin")).toBe(true);
+		expect(canEditWorkspaceContent("editor")).toBe(true);
+		expect(canEditWorkspaceContent("viewer")).toBe(false);
+		expect(canDeleteWorkspaceContent("owner")).toBe(true);
+		expect(canDeleteWorkspaceContent("admin")).toBe(true);
+		expect(canDeleteWorkspaceContent("editor")).toBe(false);
+		expect(canDeleteWorkspace("owner")).toBe(true);
+		expect(canDeleteWorkspace("admin")).toBe(false);
 	});
 });

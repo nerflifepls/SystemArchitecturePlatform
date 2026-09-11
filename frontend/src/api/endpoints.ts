@@ -157,7 +157,7 @@ export const diagramApi = {
 	},
 	async get(diagramId: string, signal?: AbortSignal) {
 		const response = await requestJson<DiagramResponseDto>(`/api/v1/diagrams/${diagramId}`, { signal });
-		return response.diagram;
+		return { ...response.diagram, role: response.role };
 	},
 	async create(payload: CreateDiagramDto) {
 		const response = await requestJson<DiagramResponseDto>(`/api/v1/projects/${payload.projectId}/diagrams`, {

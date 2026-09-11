@@ -56,6 +56,7 @@ import {
 import { classNames } from "../components/ui/classNames";
 import { useSession } from "../hooks/useAuth";
 import { getErrorMessage } from "../utils/errors";
+import { canEditWorkspaceContent } from "../utils/roles";
 import {
 	buildLiveWsUrl,
 	createVibrantCursorColor,
@@ -83,6 +84,7 @@ export function DiagramEditorPage() {
 	const [edges, setEdges] = useState<DiagramEdge[]>([]);
 	const [comments, setComments] = useState<StoredComment[]>([]);
 	const [syncState, setSyncState] = useState<SyncState>("loading");
+	const [initializedDiagramId, setInitializedDiagramId] = useState<string | null>(null);
 	const [lastError, setLastError] = useState<string | null>(null);
 	const [presenceConnections, setPresenceConnections] = useState<Record<string, PresenceConnection>>({});
 	const [ownConnectionId, setOwnConnectionId] = useState<string | null>(null);
@@ -109,6 +111,9 @@ export function DiagramEditorPage() {
 	const persistedUpdateSeqRef = useRef(0);
 	const pendingUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set());
 	const persistedSyncPromiseRef = useRef<Promise<number> | null>(null);
+	const canEditRef = useRef(false);
+	const ownConnectionIdRef = useRef<string | null>(null);
+	const syncedConnectionIdsRef = useRef<Set<string>>(new Set());
 	const editorConnections = getEditorConnections(presenceConnections);
 	const editorUsers = getUniquePresenceUsers(editorConnections);
 	const remoteCursorConnections = editorConnections.filter(
@@ -138,13 +143,9 @@ export function DiagramEditorPage() {
 		enabled: Boolean(diagramId),
 		refetchOnWindowFocus: false,
 	});
-
-	const snapshotQuery = useQuery({
-		queryKey: ["diagram", diagramId, "snapshot"],
-		queryFn: ({ signal }) => crdtApi.getSnapshot(diagramId, signal),
-		enabled: Boolean(diagramId),
-		refetchOnWindowFocus: false,
-	});
+	const canEdit = canEditWorkspaceContent(diagramQuery.data?.role);
+	const readOnly = !canEdit;
+	const initialSyncReady = initializedDiagramId === diagramId;
 
 	const updatesQuery = useQuery({
 		queryKey: ["diagram", diagramId, "updates"],
@@ -153,9 +154,19 @@ export function DiagramEditorPage() {
 		refetchOnWindowFocus: false,
 	});
 
+	const snapshotQuery = useQuery({
+		queryKey: ["diagram", diagramId, "snapshot"],
+		queryFn: ({ signal }) => crdtApi.getSnapshot(diagramId, signal),
+		enabled:
+			Boolean(diagramId) &&
+			(updatesQuery.isSuccess || updatesQuery.isError) &&
+			!updatesQuery.isFetching,
+		refetchOnWindowFocus: false,
+	});
+
 	const hasEditorStatus = snapshotQuery.isError || updatesQuery.isError || diagramQuery.isError || Boolean(lastError);
-	const snapshotReady = snapshotQuery.isSuccess || snapshotQuery.isError;
-	const updatesReady = updatesQuery.isSuccess || updatesQuery.isError;
+	const snapshotReady = (snapshotQuery.isSuccess || snapshotQuery.isError) && !snapshotQuery.isFetching;
+	const updatesReady = (updatesQuery.isSuccess || updatesQuery.isError) && !updatesQuery.isFetching;
 
 	const isCompactedSequenceError = useCallback((error: unknown) => {
 		return error instanceof ApiError && error.status === 409 && error.message.includes("compacted snapshot");
@@ -196,12 +207,19 @@ export function DiagramEditorPage() {
 
 		const syncPromise = crdtApi
 			.listUpdates(diagramId, { afterSeq: persistedUpdateSeqRef.current })
-			.catch((error: unknown) => {
+			.catch(async (error: unknown) => {
 				if (!isCompactedSequenceError(error)) {
 					throw error;
 				}
 
-				return crdtApi.listUpdates(diagramId);
+				const updates = await crdtApi.listUpdates(diagramId);
+				const snapshot = await crdtApi.getSnapshot(diagramId);
+
+				if (snapshot.byteLength) {
+					Y.applyUpdate(doc, snapshot, REMOTE_ORIGIN);
+				}
+
+				return updates;
 			})
 			.then(applyPersistedUpdates);
 
@@ -214,7 +232,7 @@ export function DiagramEditorPage() {
 				persistedSyncPromiseRef.current = null;
 			}
 		}
-	}, [applyPersistedUpdates, diagramId, isCompactedSequenceError]);
+	}, [applyPersistedUpdates, diagramId, doc, isCompactedSequenceError]);
 
 	const waitForPendingUpdates = useCallback(async () => {
 		const pendingUpdates = Array.from(pendingUpdatePromisesRef.current);
@@ -248,11 +266,19 @@ export function DiagramEditorPage() {
 					selection: null,
 					activeDocId: null,
 					color: cursorColorRef.current,
-					status: cursor ? "editing" : "in editor",
+					status: canEditRef.current ? (cursor ? "editing" : "in editor") : "viewing",
 				},
 			}),
 		);
 	}, []);
+
+	useEffect(() => {
+		canEditRef.current = canEdit;
+
+		if (canEdit && websocketRef.current?.readyState === WebSocket.OPEN) {
+			sendPresenceUpdate(null, true);
+		}
+	}, [canEdit, sendPresenceUpdate]);
 
 	const schedulePersistedSync = useCallback(() => {
 		if (persistedSyncTimerRef.current) {
@@ -366,6 +392,7 @@ export function DiagramEditorPage() {
 		snapshotAppliedRef.current = false;
 		initialUpdatesAppliedRef.current = false;
 		persistedUpdateSeqRef.current = 0;
+		setInitializedDiagramId(null);
 	}, [diagramId]);
 
 	useEffect(() => {
@@ -383,7 +410,7 @@ export function DiagramEditorPage() {
 	}, [doc, snapshotQuery.data, snapshotReady, syncFromSharedMaps]);
 
 	useEffect(() => {
-		if (initialUpdatesAppliedRef.current || !snapshotReady || !updatesReady) {
+		if (initialUpdatesAppliedRef.current || !snapshotReady || !updatesReady || !diagramQuery.isSuccess) {
 			return;
 		}
 
@@ -403,7 +430,7 @@ export function DiagramEditorPage() {
 			updatesQuery.data?.lastUpdateSeq ?? 0,
 		);
 
-		if (maps.nodes.size === 0) {
+		if (canEdit && maps.nodes.size === 0) {
 			doc.transact(() => {
 				for (const node of makeDefaultNodes()) {
 					maps.nodes.set(node.id, node);
@@ -416,12 +443,16 @@ export function DiagramEditorPage() {
 		}
 
 		syncFromSharedMaps();
+		setInitializedDiagramId(diagramId);
 		setSyncState("live");
 
 		if ((updatesQuery.data?.items.length ?? 0) >= INITIAL_UPDATE_COMPACTION_THRESHOLD) {
 			scheduleSnapshotSave();
 		}
 	}, [
+		canEdit,
+		diagramId,
+		diagramQuery.isSuccess,
 		doc,
 		maps.edges,
 		maps.nodes,
@@ -438,17 +469,25 @@ export function DiagramEditorPage() {
 				return;
 			}
 
-			if (websocketRef.current?.readyState === WebSocket.OPEN) {
-				websocketRef.current.send(toArrayBuffer(update));
-			}
-
-			if (origin === LIVE_DRAG_ORIGIN) {
+			if (!canEditRef.current) {
 				return;
 			}
 
+			if (origin === LIVE_DRAG_ORIGIN) {
+				if (websocketRef.current?.readyState === WebSocket.OPEN) {
+					websocketRef.current.send(toArrayBuffer(update));
+				}
+				return;
+			}
+
+			const updateBuffer = toArrayBuffer(update);
 			const persistUpdatePromise = crdtApi
 				.postUpdate(diagramId, update, crypto.randomUUID(), clientIdRef.current)
 				.then((ack) => {
+					if (websocketRef.current?.readyState === WebSocket.OPEN) {
+						websocketRef.current.send(updateBuffer);
+					}
+
 					if (ack.seq <= persistedUpdateSeqRef.current + 1) {
 						persistedUpdateSeqRef.current = Math.max(persistedUpdateSeqRef.current, ack.seq);
 						return;
@@ -480,7 +519,7 @@ export function DiagramEditorPage() {
 	}, [diagramId, doc, scheduleSnapshotSave, syncPersistedUpdates]);
 
 	useEffect(() => {
-		if (!diagramId) {
+		if (!diagramId || !initialSyncReady) {
 			return;
 		}
 
@@ -500,6 +539,8 @@ export function DiagramEditorPage() {
 		setSyncState("loading");
 		setLastError(null);
 		setOwnConnectionId(null);
+		ownConnectionIdRef.current = null;
+		syncedConnectionIdsRef.current.clear();
 		setPresenceConnections({});
 
 		websocket.addEventListener("open", () => {
@@ -510,6 +551,10 @@ export function DiagramEditorPage() {
 			setSyncState("live");
 			setLastError(null);
 			sendPresenceUpdate(null, true);
+			void syncPersistedUpdates().catch((error: unknown) => {
+				setLastError(getErrorMessage(error));
+				setSyncState("error");
+			});
 		});
 
 		websocket.addEventListener("message", (event) => {
@@ -526,6 +571,7 @@ export function DiagramEditorPage() {
 
 				if (frame.type === "ready" && frame.connectionId) {
 					setOwnConnectionId(frame.connectionId);
+					ownConnectionIdRef.current = frame.connectionId;
 					return;
 				}
 
@@ -533,6 +579,17 @@ export function DiagramEditorPage() {
 					setLastError(frame.message ?? "Realtime service returned an error.");
 					setSyncState("error");
 					return;
+				}
+
+				if (
+					frame.type === "presence:update" &&
+					frame.connectionId &&
+					frame.connectionId !== ownConnectionIdRef.current &&
+					canEditRef.current &&
+					!syncedConnectionIdsRef.current.has(frame.connectionId)
+				) {
+					syncedConnectionIdsRef.current.add(frame.connectionId);
+					websocket.send(toArrayBuffer(Y.encodeStateAsUpdate(doc)));
 				}
 
 				setPresenceConnections((current) => reducePresenceConnections(current, frame));
@@ -582,7 +639,7 @@ export function DiagramEditorPage() {
 				websocketRef.current = null;
 			}
 		};
-	}, [diagramId, doc, schedulePersistedSync, sendPresenceUpdate]);
+	}, [diagramId, doc, initialSyncReady, schedulePersistedSync, sendPresenceUpdate, syncPersistedUpdates]);
 
 	useEffect(() => {
 		return () => {
@@ -1186,9 +1243,9 @@ export function DiagramEditorPage() {
 			const previousNode = previousCommentNodes.get(comment.id);
 			const position = comment.position ?? getFallbackCommentPosition(index);
 			const size = comment.size ?? COMMENT_DEFAULT_SIZE;
-			const shouldFocus = focusedCommentId === comment.id;
+			const shouldFocus = canEdit && focusedCommentId === comment.id;
 			const data =
-				previousNode && commentNodeDataMatches(previousNode.data, comment, size, shouldFocus) ?
+				previousNode && commentNodeDataMatches(previousNode.data, comment, size, shouldFocus, readOnly) ?
 					previousNode.data
 				:	{
 						label: "Comment",
@@ -1199,6 +1256,7 @@ export function DiagramEditorPage() {
 						createdAt: comment.createdAt,
 						updatedAt: comment.updatedAt,
 						shouldFocus,
+						readOnly,
 						onDelete: removeComment,
 						onFocusHandled: clearFocusedComment,
 						onResize: updateCommentSize,
@@ -1234,7 +1292,7 @@ export function DiagramEditorPage() {
 
 		commentNodeCacheRef.current = nextCommentNodes;
 		return [...nodes, ...commentFlowNodes];
-	}, [clearFocusedComment, comments, focusedCommentId, nodes, removeComment, updateCommentSize, updateCommentText]);
+	}, [canEdit, clearFocusedComment, comments, focusedCommentId, nodes, readOnly, removeComment, updateCommentSize, updateCommentText]);
 
 	useEffect(() => {
 		setNodeLabelDraft(selectedNode?.data.label ?? "");
@@ -1341,7 +1399,7 @@ export function DiagramEditorPage() {
 						persistNodePosition(node.id, node.position);
 					}}
 					onPaneClick={(event) => {
-						if (event.detail !== 2) {
+						if (readOnly || event.detail !== 2) {
 							return;
 						}
 
@@ -1357,6 +1415,7 @@ export function DiagramEditorPage() {
 					onPointerMove={handleEditorPointerMove}
 					onPointerLeave={handleEditorPointerLeave}
 					remoteCursorConnections={remoteCursorConnections}
+					readOnly={readOnly}
 				/>
 
 				<DiagramEditorPanel
@@ -1369,6 +1428,7 @@ export function DiagramEditorPage() {
 					nodeCount={nodes.length}
 					commentCount={comments.length}
 					isSavingSnapshot={saveSnapshot.isPending}
+					readOnly={readOnly}
 					selectedNode={selectedNode}
 					nodeLabelDraft={nodeLabelDraft}
 					selectedEdge={selectedEdge}

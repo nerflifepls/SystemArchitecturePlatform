@@ -23,6 +23,7 @@ type DiagramCanvasProps = {
 	onPointerMove: NonNullable<ReactFlowProps<DiagramNode, DiagramEdge>["onPointerMove"]>;
 	onPointerLeave: NonNullable<ReactFlowProps<DiagramNode, DiagramEdge>["onPointerLeave"]>;
 	remoteCursorConnections: PresenceConnection[];
+	readOnly: boolean;
 };
 
 export function DiagramCanvas({
@@ -41,6 +42,7 @@ export function DiagramCanvas({
 	onPointerMove,
 	onPointerLeave,
 	remoteCursorConnections,
+	readOnly,
 }: DiagramCanvasProps) {
 	return (
 		<div className={styles.frame} ref={frameRef}>
@@ -56,11 +58,13 @@ export function DiagramCanvas({
 					onReconnect={onReconnect}
 					onSelectionChange={onSelectionChange}
 					onNodeDragStop={onNodeDragStop}
-					edgesReconnectable
+					nodesDraggable={!readOnly}
+					nodesConnectable={!readOnly}
+					edgesReconnectable={!readOnly}
 					onPaneClick={onPaneClick}
 					onPointerMove={onPointerMove}
 					onPointerLeave={onPointerLeave}
-					deleteKeyCode={["Backspace", "Delete"]}
+					deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
 					fitView
 					minZoom={0.2}
 					maxZoom={1.8}

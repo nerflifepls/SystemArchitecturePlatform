@@ -3,8 +3,8 @@ import { Edit3, FileSymlink, Maximize2, Plus, Save, Trash2 } from "lucide-react"
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
 
-import { diagramApi, projectApi } from "../api/endpoints";
-import type { DiagramDto } from "../api/types";
+import { diagramApi, projectApi, workspaceApi } from "../api/endpoints";
+import type { DiagramDto, WorkspaceRole } from "../api/types";
 import {
 	Button,
 	ButtonLink,
@@ -19,14 +19,16 @@ import {
 	ToolPanel,
 } from "../components/ui";
 import { getErrorMessage } from "../utils/errors";
+import { canDeleteWorkspaceContent, canEditWorkspaceContent } from "../utils/roles";
 
 type DiagramCardProps = {
 	diagram: DiagramDto;
 	workspaceId: string;
 	projectId: string;
+	role?: WorkspaceRole;
 };
 
-function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
+function DiagramCard({ diagram, workspaceId, projectId, role }: DiagramCardProps) {
 	const queryClient = useQueryClient();
 	const [isEditing, setIsEditing] = useState(false);
 	const [title, setTitle] = useState(diagram.title);
@@ -74,7 +76,7 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 						<Maximize2 size={16} />
 						<span>Editor</span>
 					</ButtonLink>
-					<Button
+					{canEditWorkspaceContent(role) ? <Button
 						variant="icon"
 						size="compact"
 						type="button"
@@ -82,8 +84,8 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 						aria-label="Edit diagram"
 					>
 						<Edit3 size={16} />
-					</Button>
-					<Button
+					</Button> : null}
+					{canDeleteWorkspaceContent(role) ? <Button
 						variant="icon"
 						size="compact"
 						tone="danger"
@@ -92,7 +94,7 @@ function DiagramCard({ diagram, workspaceId, projectId }: DiagramCardProps) {
 						aria-label="Delete diagram"
 					>
 						<Trash2 size={16} />
-					</Button>
+					</Button> : null}
 				</>
 			}
 			message={
@@ -145,6 +147,12 @@ export function ProjectPage() {
 		queryFn: ({ signal }) => projectApi.get(projectId, signal),
 		enabled: Boolean(projectId),
 	});
+	const workspaceQuery = useQuery({
+		queryKey: ["workspace", workspaceId],
+		queryFn: ({ signal }) => workspaceApi.get(workspaceId, signal),
+		enabled: Boolean(workspaceId),
+	});
+	const canEditContent = canEditWorkspaceContent(workspaceQuery.data?.role);
 
 	const diagramsQuery = useQuery({
 		queryKey: ["diagrams", projectId],
@@ -211,7 +219,7 @@ export function ProjectPage() {
 				<ErrorPanel>{getErrorMessage(projectQuery.error)}</ErrorPanel>
 			:	null}
 
-			<ToolPanel aria-labelledby="project-settings-title">
+			{canEditContent ? <ToolPanel aria-labelledby="project-settings-title">
 				<div>
 					<h2 id="project-settings-title">Project details</h2>
 					<p className="muted-copy">Keep project naming aligned with the design effort.</p>
@@ -234,9 +242,9 @@ export function ProjectPage() {
 				{updateProject.isError ?
 					<FormError>{getErrorMessage(updateProject.error)}</FormError>
 				:	null}
-			</ToolPanel>
+			</ToolPanel> : null}
 
-			<ToolPanel aria-labelledby="new-diagram-title">
+			{canEditContent ? <ToolPanel aria-labelledby="new-diagram-title">
 				<div>
 					<h2 id="new-diagram-title">New diagram</h2>
 					<p className="muted-copy">Create an editable collaborative graph document.</p>
@@ -257,7 +265,7 @@ export function ProjectPage() {
 				{createDiagram.isError ?
 					<FormError>{getErrorMessage(createDiagram.error)}</FormError>
 				:	null}
-			</ToolPanel>
+			</ToolPanel> : null}
 
 			{diagramsQuery.isError ?
 				<ErrorPanel>{getErrorMessage(diagramsQuery.error)}</ErrorPanel>
@@ -271,7 +279,13 @@ export function ProjectPage() {
 				emptyMessage="No diagrams yet."
 			>
 				{diagramsQuery.data?.map((diagram) => (
-					<DiagramCard key={diagram.id} diagram={diagram} workspaceId={workspaceId} projectId={projectId} />
+					<DiagramCard
+						key={diagram.id}
+						diagram={diagram}
+						workspaceId={workspaceId}
+						projectId={projectId}
+						role={workspaceQuery.data?.role}
+					/>
 				))}
 			</ResourceGrid>
 		</div>

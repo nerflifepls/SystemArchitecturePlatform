@@ -37,3 +37,15 @@ export function getMemberInitials(name: string, email: string) {
 export function canManageWorkspaceMembers(role: WorkspaceRole | undefined) {
 	return role === "owner" || role === "admin";
 }
+
+export function canEditWorkspaceContent(role: WorkspaceRole | undefined) {
+	return role === "owner" || role === "admin" || role === "editor";
+}
+
+export function canDeleteWorkspaceContent(role: WorkspaceRole | undefined) {
+	return role === "owner" || role === "admin";
+}
+
+export function canDeleteWorkspace(role: WorkspaceRole | undefined) {
+	return role === "owner";
+}

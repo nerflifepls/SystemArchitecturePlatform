@@ -76,6 +76,7 @@ export type DiagramDto = {
 	lastUpdateSeq?: number;
 	createdAt?: string;
 	updatedAt?: string;
+	role?: WorkspaceRole;
 };
 
 export type CreateDiagramDto = {

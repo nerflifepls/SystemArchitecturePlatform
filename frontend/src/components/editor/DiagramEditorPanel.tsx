@@ -22,6 +22,7 @@ type DiagramEditorPanelProps = {
 	nodeCount: number;
 	commentCount: number;
 	isSavingSnapshot: boolean;
+	readOnly: boolean;
 	selectedNode: DiagramNode | null;
 	nodeLabelDraft: string;
 	selectedEdge: DiagramEdge | null;
@@ -53,6 +54,7 @@ export function DiagramEditorPanel({
 	nodeCount,
 	commentCount,
 	isSavingSnapshot,
+	readOnly,
 	selectedNode,
 	nodeLabelDraft,
 	selectedEdge,
@@ -89,6 +91,7 @@ export function DiagramEditorPanel({
 					<ChevronLeft size={17} />
 				</button>
 			:	<>
+					{readOnly ? <p className="muted-copy">Viewer access: this diagram is read-only.</p> : null}
 					<section className={styles.section} aria-labelledby="editor-panel-status-title">
 						<div className={styles.sectionHeading}>
 							<div className={styles.title}>
@@ -123,11 +126,11 @@ export function DiagramEditorPanel({
 								<ArrowLeft size={16} />
 								<span>Details</span>
 							</Link>
-							<button className="secondary-button" type="button" onClick={onAddNode}>
+							<button className="secondary-button" type="button" onClick={onAddNode} disabled={readOnly}>
 								<Plus size={16} />
 								<span>Node</span>
 							</button>
-							<button className="secondary-button" type="button" onClick={onAddComment}>
+							<button className="secondary-button" type="button" onClick={onAddComment} disabled={readOnly}>
 								<MessageSquare size={16} />
 								<span>Comment</span>
 							</button>
@@ -135,7 +138,7 @@ export function DiagramEditorPanel({
 								className="primary-button"
 								type="button"
 								onClick={onSaveSnapshot}
-								disabled={isSavingSnapshot}
+								disabled={isSavingSnapshot || readOnly}
 							>
 								<Save size={16} />
 								<span>Snapshot</span>
@@ -154,6 +157,7 @@ export function DiagramEditorPanel({
 									<span>Name</span>
 									<input
 										value={nodeLabelDraft}
+										disabled={readOnly}
 										onChange={(event) => onNodeLabelDraftChange(event.target.value)}
 										onBlur={onNodeLabelBlur}
 									/>
@@ -162,6 +166,7 @@ export function DiagramEditorPanel({
 									<span>Type</span>
 									<select
 										value={selectedNode.data.kind}
+										disabled={readOnly}
 										onChange={(event) => onNodeKindChange(event.target.value)}
 									>
 										{NODE_KIND_PRESETS.map((kind) => (
@@ -174,11 +179,11 @@ export function DiagramEditorPanel({
 								<div className={styles.nodeMeta}>
 									<span>{selectedNode.data.kind}</span>
 								</div>
-								<button className="secondary-button" type="submit" disabled={!nodeLabelDraft.trim()}>
+								<button className="secondary-button" type="submit" disabled={readOnly || !nodeLabelDraft.trim()}>
 									<Save size={15} />
 									<span>Save name</span>
 								</button>
-								<button className="secondary-button danger-button" type="button" onClick={onRemoveNode}>
+								<button className="secondary-button danger-button" type="button" onClick={onRemoveNode} disabled={readOnly}>
 									<Trash2 size={15} />
 									<span>Delete node</span>
 								</button>
@@ -197,6 +202,7 @@ export function DiagramEditorPanel({
 									<span>Protocol</span>
 									<select
 										value={selectedProtocolValue}
+										disabled={readOnly}
 										onChange={(event) => onEdgeProtocolChange(event.target.value)}
 									>
 										<option value="">No label</option>
@@ -212,15 +218,16 @@ export function DiagramEditorPanel({
 									<span>Custom label</span>
 									<input
 										value={edgeLabelDraft}
+										disabled={readOnly}
 										onChange={(event) => onEdgeLabelDraftChange(event.target.value)}
 										placeholder="HTTPS, RPC, Kafka"
 									/>
 								</label>
-								<button className="secondary-button" type="submit">
+								<button className="secondary-button" type="submit" disabled={readOnly}>
 									<Save size={15} />
 									<span>Save label</span>
 								</button>
-								<button className="secondary-button danger-button" type="button" onClick={onRemoveEdge}>
+								<button className="secondary-button danger-button" type="button" onClick={onRemoveEdge} disabled={readOnly}>
 									<Trash2 size={15} />
 									<span>Disconnect arrow</span>
 								</button>
