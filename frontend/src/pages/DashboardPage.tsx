@@ -55,6 +55,7 @@ export function DashboardPage() {
 			<PageHeader
 				eyebrow="Dashboard"
 				title="Workspaces"
+				description="Organize your systems, projects, and collaborators in one place."
 				actions={<span className="meta-pill">{workspacesQuery.data?.length ?? 0} workspaces</span>}
 			/>
 

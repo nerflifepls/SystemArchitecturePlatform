@@ -1,48 +1,64 @@
 .grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-	gap: 16px;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 315px), 1fr));
+	gap: 18px;
 }
 
 .card {
 	display: grid;
 	align-content: start;
-	gap: 13px;
-	min-height: 142px;
-	padding: 16px;
+	gap: 16px;
+	min-height: 164px;
+	padding: 19px;
 	border: var(--border-width) solid var(--border);
-	border-radius: 8px;
-	background: linear-gradient(180deg, oklch(0.22 0.022 240 / 0.96), oklch(0.165 0.018 240 / 0.98)), var(--bg-card);
+	border-radius: var(--border-radius);
+	background: linear-gradient(145deg, oklch(0.215 0.024 240 / 0.98), oklch(0.16 0.016 240 / 0.98));
 	box-shadow: var(--shadow-tight);
 	transition:
 		border-color 0.16s ease,
 		box-shadow 0.16s ease,
-		transform 0.16s ease;
+		transform 0.2s ease;
+	position: relative;
+	overflow: hidden;
+}
+
+.card::before {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 2px;
+	background: linear-gradient(180deg, var(--primary), transparent 72%);
+	content: "";
+	opacity: 0;
+	transition: opacity 0.2s ease;
 }
 
 .card:hover {
 	border-color: var(--border-hi);
 	box-shadow: 0 16px 34px oklch(0.05 0.015 240 / 0.34);
-	transform: translateY(-1px);
+	transform: translateY(-3px);
+}
+
+.card:hover::before {
+	opacity: 1;
 }
 
 .content {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
 	align-items: start;
-	gap: 13px;
+	gap: 14px;
 	min-width: 0;
 }
 
 .icon {
 	display: inline-grid;
-	width: 38px;
-	height: 38px;
+	width: 42px;
+	height: 42px;
 	flex: 0 0 auto;
 	place-items: center;
 	border: 1px solid oklch(0.72 0.16 150 / 0.28);
-	border-radius: 8px;
-	background: var(--primary-dim);
+	border-radius: 11px;
+	background: linear-gradient(145deg, oklch(0.72 0.16 150 / 0.17), oklch(0.65 0.14 240 / 0.1));
 	color: var(--primary-glow);
 }
 
@@ -55,7 +71,7 @@
 .body h2 {
 	overflow: hidden;
 	color: var(--text-main);
-	font-size: 0.98rem;
+	font-size: 1.02rem;
 	font-weight: 800;
 	line-height: 1.25;
 	text-overflow: ellipsis;
@@ -79,7 +95,7 @@
 	flex-wrap: wrap;
 	gap: 8px;
 	min-width: 0;
-	padding-top: 12px;
+	padding-top: 14px;
 	border-top: 1px solid oklch(0.28 0.02 240 / 0.74);
 }
 

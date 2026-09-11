@@ -212,6 +212,7 @@ export function ProjectPage() {
 			<PageHeader
 				eyebrow="Project"
 				title={projectQuery.data?.name ?? "Project"}
+				description={projectQuery.data?.description || "Build and maintain the diagrams for this system."}
 				actions={<span className="meta-pill">{diagramsQuery.data?.length ?? 0} diagrams</span>}
 			/>
 

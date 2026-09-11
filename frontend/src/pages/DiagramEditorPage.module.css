@@ -4,7 +4,7 @@
 	min-height: 100vh;
 	height: 100vh;
 	gap: 0;
-	background: var(--bg-void);
+	background: oklch(0.105 0.013 240);
 	overflow: hidden;
 }
 
@@ -16,24 +16,25 @@
 	z-index: 2;
 	display: flex;
 	align-items: center;
-	min-height: 38px;
+	min-height: 42px;
 	gap: 8px;
-	padding: 7px 16px;
+	padding: 8px 18px;
 	border-bottom: 1px solid var(--border);
-	background: oklch(0.145 0.014 240 / 0.88);
+	background: oklch(0.125 0.016 240 / 0.94);
+	box-shadow: 0 8px 24px oklch(0.04 0.014 240 / 0.18);
 	flex-wrap: wrap;
 }
 
 .workspace {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) 340px;
+	grid-template-columns: minmax(0, 1fr) 352px;
 	min-width: 0;
 	min-height: 0;
 	height: 100%;
 }
 
 .workspace.withCollapsedPanel {
-	grid-template-columns: minmax(0, 1fr) 58px;
+	grid-template-columns: minmax(0, 1fr) 62px;
 }
 
 @media (max-width: 860px) {

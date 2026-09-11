@@ -1,25 +1,44 @@
 .grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
-	gap: 10px 16px;
+	gap: 0;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: oklch(0.15 0.016 240 / 0.48);
+	overflow: hidden;
+}
+
+.label,
+.value {
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--border);
+}
+
+.label:nth-last-of-type(1),
+.value:last-child {
+	border-bottom: 0;
 }
 
 .label {
 	color: var(--text-sub);
+	font-size: 0.83rem;
 }
 
 .value {
 	color: var(--text-main);
 	font-weight: 800;
 	text-align: right;
+	font-size: 0.88rem;
 }
 
 @media (max-width: 520px) {
 	.grid {
 		grid-template-columns: 1fr;
+		gap: 0;
 	}
 
 	.value {
 		text-align: left;
+		padding-top: 0;
 	}
 }

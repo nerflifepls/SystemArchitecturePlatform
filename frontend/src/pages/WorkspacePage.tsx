@@ -144,6 +144,7 @@ export function WorkspacePage() {
 			<PageHeader
 				eyebrow="Workspace"
 				title={workspaceQuery.data?.name ?? "Workspace"}
+				description="Manage the people and projects that shape this workspace."
 				actions={
 					<>
 						<span className="meta-pill">{projectsQuery.data?.length ?? 0} projects</span>

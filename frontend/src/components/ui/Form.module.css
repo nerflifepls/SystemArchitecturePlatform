@@ -3,21 +3,21 @@
 	align-items: end;
 	justify-content: flex-end;
 	flex-wrap: wrap;
-	gap: 12px;
+	gap: 10px;
 	min-width: min(100%, 520px);
 }
 
 .field {
 	display: grid;
-	gap: 6px;
+	gap: 7px;
 	min-width: min(100%, 220px);
 }
 
 .field span {
 	color: var(--text-sub);
-	font-size: 0.78rem;
+	font-size: 0.72rem;
 	font-weight: 800;
-	letter-spacing: 0.04em;
+	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 

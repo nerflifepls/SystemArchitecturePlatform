@@ -45,6 +45,7 @@ export function DiagramOverviewPage() {
 			<PageHeader
 				eyebrow="Diagram"
 				title={diagramQuery.data?.title ?? "Diagram"}
+				description="Review saved state and live collaboration before entering the canvas."
 				actions={
 					<>
 						<ButtonLink to={`/workspaces/${workspaceId}/projects/${projectId}`}>

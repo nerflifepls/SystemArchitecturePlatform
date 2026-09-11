@@ -10,7 +10,7 @@
 	min-height: 0;
 	border: 0;
 	border-radius: 0;
-	background: oklch(0.16 0.014 240);
+	background: oklch(0.135 0.014 240);
 	box-shadow: none;
 	overflow: hidden;
 }
@@ -48,12 +48,16 @@
 }
 
 :global(.react-flow) {
-	background: linear-gradient(135deg, oklch(0.72 0.16 150 / 0.08), transparent 34%), oklch(0.155 0.014 240);
+	background:
+		radial-gradient(circle at 15% 12%, oklch(0.72 0.16 150 / 0.09), transparent 28rem),
+		radial-gradient(circle at 82% 78%, oklch(0.65 0.14 240 / 0.08), transparent 30rem),
+		oklch(0.135 0.014 240);
 }
 
 :global(.react-flow__edge-path) {
 	stroke: var(--primary);
-	stroke-width: 2;
+	stroke-width: 2.2;
+	filter: drop-shadow(0 2px 5px oklch(0.72 0.16 150 / 0.18));
 }
 
 :global(.react-flow__edge-textbg) {
@@ -67,14 +71,16 @@
 
 :global(.react-flow__controls) {
 	border: 1px solid var(--border);
-	border-radius: var(--border-radius-small);
+	border-radius: 12px;
 	box-shadow: var(--shadow-tight);
 	overflow: hidden;
 }
 
 :global(.react-flow__controls-button) {
 	border-bottom: 1px solid var(--border);
-	background: var(--bg-input);
+	width: 36px;
+	height: 36px;
+	background: oklch(0.17 0.019 240 / 0.96);
 	color: var(--text-main);
 }
 
@@ -88,9 +94,18 @@
 
 :global(.react-flow__minimap) {
 	border: 1px solid var(--border);
-	border-radius: var(--border-radius-small);
-	background: var(--bg-card);
+	border-radius: 12px;
+	background: oklch(0.145 0.017 240 / 0.92);
 	box-shadow: var(--shadow-tight);
+}
+
+:global(.react-flow__background-pattern) {
+	fill: oklch(0.62 0.04 220 / 0.2);
+}
+
+:global(.react-flow__selection) {
+	border: 1px solid var(--primary);
+	background: var(--primary-dim);
 }
 
 @media (max-width: 640px) {

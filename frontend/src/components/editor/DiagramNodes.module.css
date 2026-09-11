@@ -1,12 +1,12 @@
 .componentNode {
 	display: grid;
-	min-width: 148px;
-	max-width: 230px;
-	gap: 3px;
-	padding: 14px 18px;
+	min-width: 156px;
+	max-width: 240px;
+	gap: 5px;
+	padding: 15px 19px;
 	border: 1px solid oklch(0.72 0.16 150 / 0.5);
-	border-radius: var(--border-radius-small);
-	background: linear-gradient(180deg, oklch(0.25 0.025 240), oklch(0.2 0.02 240));
+	border-radius: 12px;
+	background: linear-gradient(145deg, oklch(0.25 0.027 240), oklch(0.185 0.02 240));
 	box-shadow: 0 12px 30px oklch(0.05 0.02 240 / 0.36);
 	color: var(--text-main);
 	font-weight: 900;
@@ -30,17 +30,17 @@
 .componentNode span {
 	color: var(--text-sub);
 	font-size: 0.7rem;
-	letter-spacing: 0;
+	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 
 .componentNode strong {
-	font-size: 0.92rem;
+	font-size: 0.94rem;
 }
 
 .nodeHandle {
-	width: 10px;
-	height: 10px;
+	width: 11px;
+	height: 11px;
 	border: 2px solid oklch(0.16 0.014 240);
 	background: var(--primary-glow);
 	opacity: 0.82;
@@ -64,8 +64,8 @@
 	min-height: 128px;
 	padding: 11px;
 	border: 1px solid oklch(0.72 0.16 150 / 0.44);
-	border-radius: var(--border-radius-small);
-	background: linear-gradient(180deg, oklch(0.22 0.025 240), oklch(0.18 0.02 240));
+	border-radius: 12px;
+	background: linear-gradient(145deg, oklch(0.225 0.026 240), oklch(0.17 0.019 240));
 	box-shadow: 0 16px 34px oklch(0.05 0.02 240 / 0.32);
 	color: var(--text-main);
 	overflow: hidden;

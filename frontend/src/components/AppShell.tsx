@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, LayoutDashboard, LogOut, Plus } from "lucide-react";
+import { Boxes, CircleUserRound, LayoutDashboard, LogOut, Plus } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { API_BASE_URL } from "../api/client";
@@ -22,15 +22,17 @@ export function AppShell() {
 			navigate("/login");
 		},
 	});
+	const userLabel = sessionQuery.data?.user?.name ?? sessionQuery.data?.user?.email ?? "Account";
+	const userInitial = userLabel.trim().charAt(0).toUpperCase() || "U";
 
 	return (
 		<div className="app-shell">
 			<aside className="sidebar" aria-label="Primary">
-				<div className="brand-block">
-					<span className="brand-mark">SD</span>
+				<div className="brand-block sidebar-brand">
+					<span className="brand-mark" aria-hidden="true"><Boxes size={19} /></span>
 					<div>
 						<strong>System Design</strong>
-						<span>Collaborative workspace</span>
+						<span>Visual architecture</span>
 					</div>
 				</div>
 
@@ -56,15 +58,22 @@ export function AppShell() {
 				</nav>
 
 				<div className="sidebar-footer">
-					<span className="api-pill">API {API_BASE_URL}</span>
+					<div className="sidebar-user">
+						<span className="user-avatar" aria-hidden="true">{userInitial}</span>
+						<div>
+							<strong>{userLabel}</strong>
+							<span>Active account</span>
+						</div>
+					</div>
+					<span className="api-pill">API · {API_BASE_URL}</span>
 				</div>
 			</aside>
 
 			<div className="workspace-shell">
 				<header className="topbar">
 					<div>
-						<span className="eyebrow">MVP workspace</span>
-						<strong>{sessionQuery.data?.user?.name ?? sessionQuery.data?.user?.email}</strong>
+						<span className="eyebrow">Design workspace</span>
+						<strong><CircleUserRound size={16} /> {userLabel}</strong>
 					</div>
 					<button className="icon-text-button" type="button" onClick={() => signOutMutation.mutate()}>
 						<LogOut size={16} />
