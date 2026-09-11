@@ -56,6 +56,38 @@ const EDITOR_ONLY_SELECTOR = [
 	".react-flow__edgeupdater",
 	".react-flow__connectionline",
 ].join(",");
+const SVG_EXPORT_STYLE_PROPERTIES = [
+	"color",
+	"fill",
+	"fill-opacity",
+	"fill-rule",
+	"stroke",
+	"stroke-opacity",
+	"stroke-width",
+	"stroke-linecap",
+	"stroke-linejoin",
+	"stroke-miterlimit",
+	"stroke-dasharray",
+	"stroke-dashoffset",
+	"marker-start",
+	"marker-mid",
+	"marker-end",
+	"opacity",
+	"filter",
+	"paint-order",
+	"shape-rendering",
+	"vector-effect",
+	"font-family",
+	"font-size",
+	"font-style",
+	"font-weight",
+	"letter-spacing",
+	"text-anchor",
+	"dominant-baseline",
+	"stop-color",
+	"stop-opacity",
+	"visibility",
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -169,6 +201,41 @@ function includeInVisualExport(node: HTMLElement) {
 	return !node.matches?.(EDITOR_ONLY_SELECTOR);
 }
 
+/**
+ * html-to-image deep-clones SVG elements, but does not copy the computed styles
+ * of their descendants. React Flow's connections and labels are styled by CSS,
+ * so their paths and text otherwise fall back to the SVG defaults in exports.
+ */
+function inlineSvgStylesForExport(root: HTMLElement) {
+	const view = root.ownerDocument.defaultView;
+	if (!view) return () => undefined;
+
+	const snapshots = Array.from(root.querySelectorAll<SVGElement>("svg, svg *"), (element) => ({
+		element,
+		style: element.getAttribute("style"),
+	}));
+
+	for (const { element } of snapshots) {
+		const computedStyle = view.getComputedStyle(element);
+		for (const property of SVG_EXPORT_STYLE_PROPERTIES) {
+			const value = computedStyle.getPropertyValue(property);
+			if (value) {
+				element.style.setProperty(property, value, computedStyle.getPropertyPriority(property));
+			}
+		}
+	}
+
+	return () => {
+		for (const { element, style } of snapshots) {
+			if (style === null) {
+				element.removeAttribute("style");
+			} else {
+				element.setAttribute("style", style);
+			}
+		}
+	};
+}
+
 function dataUrlToBlob(dataUrl: string, fallbackType: string) {
 	const separatorIndex = dataUrl.indexOf(",");
 	if (!dataUrl.startsWith("data:") || separatorIndex < 0) {
@@ -206,38 +273,43 @@ async function captureVisualExport(
 		preferredFontFormat: "woff2",
 		pixelRatio,
 	};
-	const { toBlob, toPng, toSvg } = await import("html-to-image");
+	const restoreSvgStyles = inlineSvgStylesForExport(surface.element);
+	try {
+		const { toBlob, toPng, toSvg } = await import("html-to-image");
 
-	if (format === "svg") {
-		return dataUrlToBlob(await toSvg(surface.element, imageOptions), "image/svg+xml;charset=utf-8");
-	}
-
-	if (format === "png") {
-		const blob = await toBlob(surface.element, imageOptions);
-		if (!blob) {
-			throw new Error("Could not encode the diagram PNG.");
+		if (format === "svg") {
+			return dataUrlToBlob(await toSvg(surface.element, imageOptions), "image/svg+xml;charset=utf-8");
 		}
-		return blob;
-	}
 
-	const pngDataUrl = await toPng(surface.element, imageOptions);
-	const { jsPDF } = await import("jspdf");
-	const pdf = new jsPDF({
-		orientation: width >= height ? "landscape" : "portrait",
-		unit: "px",
-		format: [width, height],
-		compress: true,
-		hotfixes: ["px_scaling"],
-	});
-	const pageWidth = pdf.internal.pageSize.getWidth();
-	const pageHeight = pdf.internal.pageSize.getHeight();
-	pdf.setProperties({
-		title,
-		subject: "System design diagram",
-		creator: "System Design Workspace",
-	});
-	pdf.addImage(pngDataUrl, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
-	return pdf.output("blob");
+		if (format === "png") {
+			const blob = await toBlob(surface.element, imageOptions);
+			if (!blob) {
+				throw new Error("Could not encode the diagram PNG.");
+			}
+			return blob;
+		}
+
+		const pngDataUrl = await toPng(surface.element, imageOptions);
+		const { jsPDF } = await import("jspdf");
+		const pdf = new jsPDF({
+			orientation: width >= height ? "landscape" : "portrait",
+			unit: "px",
+			format: [width, height],
+			compress: true,
+			hotfixes: ["px_scaling"],
+		});
+		const pageWidth = pdf.internal.pageSize.getWidth();
+		const pageHeight = pdf.internal.pageSize.getHeight();
+		pdf.setProperties({
+			title,
+			subject: "System design diagram",
+			creator: "System Design Workspace",
+		});
+		pdf.addImage(pngDataUrl, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+		return pdf.output("blob");
+	} finally {
+		restoreSvgStyles();
+	}
 }
 
 export function createDiagramDocument(

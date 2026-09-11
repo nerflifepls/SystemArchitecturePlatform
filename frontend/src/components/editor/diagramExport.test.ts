@@ -95,6 +95,52 @@ describe("high-fidelity diagram export", () => {
 		expect(URL.createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: "image/svg+xml" }));
 	});
 
+	it("preserves computed SVG styles in the cloned export and restores the live canvas", async () => {
+		const surface = exportSurface();
+		const stylesheet = document.createElement("style");
+		stylesheet.textContent = `
+			.export-edge { fill: none; stroke: rgb(98, 216, 145); stroke-width: 2.2px; stroke-linecap: round; }
+			.export-label-background { fill: rgb(16, 33, 40); }
+			.export-label { fill: rgb(243, 250, 245); font-weight: 800; }
+		`;
+		const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		const edge = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		const labelBackground = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+		const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+		edge.classList.add("export-edge");
+		edge.setAttribute("style", "opacity: 0.75");
+		labelBackground.classList.add("export-label-background");
+		label.classList.add("export-label");
+		svg.append(edge, labelBackground, label);
+		surface.element.append(svg);
+		document.head.append(stylesheet);
+		document.body.append(surface.element);
+
+		const expectedStroke = getComputedStyle(edge).getPropertyValue("stroke");
+		const expectedLabelFill = getComputedStyle(label).getPropertyValue("fill");
+		const expectedLabelBackground = getComputedStyle(labelBackground).getPropertyValue("fill");
+		expect(expectedStroke).not.toBe("");
+		expect(expectedLabelFill).not.toBe("");
+		expect(expectedLabelBackground).not.toBe("");
+
+		exportMocks.toSvg.mockImplementationOnce(async () => {
+			expect(edge.style.getPropertyValue("stroke")).toBe(expectedStroke);
+			expect(edge.style.getPropertyValue("stroke-width")).toBe("2.2px");
+			expect(label.style.getPropertyValue("fill")).toBe(expectedLabelFill);
+			expect(label.style.getPropertyValue("font-weight")).toBe("800");
+			expect(labelBackground.style.getPropertyValue("fill")).toBe(expectedLabelBackground);
+			return "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3C%2Fsvg%3E";
+		});
+
+		await exportDiagram(createDiagramDocument("Styled canvas", diagramNodes, [], []), "svg", surface);
+
+		expect(edge.getAttribute("style")).toBe("opacity: 0.75");
+		expect(label.getAttribute("style")).toBeNull();
+		expect(labelBackground.getAttribute("style")).toBeNull();
+		stylesheet.remove();
+		surface.element.remove();
+	});
+
 	it("restores the viewport after PNG and PDF rendering", async () => {
 		const documentModel = createDiagramDocument("Thesis canvas", diagramNodes, [], []);
 		const pngSurface = exportSurface();
