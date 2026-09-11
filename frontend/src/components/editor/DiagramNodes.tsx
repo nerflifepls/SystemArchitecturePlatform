@@ -45,62 +45,10 @@ export const DiagramComponentNode = memo(function DiagramComponentNode({
 }: NodeProps<Node<DiagramNodeData, "default">>) {
 	return (
 		<div className={classNames(styles.componentNode, selected && styles.selected)}>
-			<Handle
-				id="top-source"
-				type="source"
-				position={Position.Top}
-				className={styles.nodeHandle}
-				style={{ left: "42%" }}
-			/>
-			<Handle
-				id="top-target"
-				type="target"
-				position={Position.Top}
-				className={classNames(styles.nodeHandle, styles.target)}
-				style={{ left: "58%" }}
-			/>
-			<Handle
-				id="right-source"
-				type="source"
-				position={Position.Right}
-				className={styles.nodeHandle}
-				style={{ top: "42%" }}
-			/>
-			<Handle
-				id="right-target"
-				type="target"
-				position={Position.Right}
-				className={classNames(styles.nodeHandle, styles.target)}
-				style={{ top: "58%" }}
-			/>
-			<Handle
-				id="bottom-source"
-				type="source"
-				position={Position.Bottom}
-				className={styles.nodeHandle}
-				style={{ left: "42%" }}
-			/>
-			<Handle
-				id="bottom-target"
-				type="target"
-				position={Position.Bottom}
-				className={classNames(styles.nodeHandle, styles.target)}
-				style={{ left: "58%" }}
-			/>
-			<Handle
-				id="left-source"
-				type="source"
-				position={Position.Left}
-				className={styles.nodeHandle}
-				style={{ top: "42%" }}
-			/>
-			<Handle
-				id="left-target"
-				type="target"
-				position={Position.Left}
-				className={classNames(styles.nodeHandle, styles.target)}
-				style={{ top: "58%" }}
-			/>
+			<Handle id="top" type="source" position={Position.Top} className={styles.nodeHandle} />
+			<Handle id="right" type="source" position={Position.Right} className={styles.nodeHandle} />
+			<Handle id="bottom" type="source" position={Position.Bottom} className={styles.nodeHandle} />
+			<Handle id="left" type="source" position={Position.Left} className={styles.nodeHandle} />
 			<span>{data.kind}</span>
 			<strong>{data.label}</strong>
 		</div>

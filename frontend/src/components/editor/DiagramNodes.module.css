@@ -39,20 +39,20 @@
 }
 
 .nodeHandle {
-	width: 11px;
-	height: 11px;
+	width: 12px;
+	height: 12px;
 	border: 2px solid oklch(0.16 0.014 240);
-	background: var(--primary-glow);
-	opacity: 0.82;
-}
-
-.nodeHandle.target {
-	background: var(--secondary);
+	background: linear-gradient(135deg, var(--primary-glow), var(--secondary));
+	box-shadow: 0 0 0 2px oklch(0.72 0.16 150 / 0.08);
+	opacity: 0.88;
+	transition: box-shadow 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
 }
 
 .componentNode:hover .nodeHandle,
 :global(.react-flow__node-default.selected) .nodeHandle {
 	opacity: 1;
+	box-shadow: 0 0 0 4px oklch(0.72 0.16 150 / 0.13);
+	transform: scale(1.08);
 }
 
 .commentNode {

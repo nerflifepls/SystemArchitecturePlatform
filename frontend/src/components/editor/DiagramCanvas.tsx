@@ -1,5 +1,6 @@
 import {
 	Background,
+	ConnectionMode,
 	ConnectionLineType,
 	Controls,
 	MiniMap,
@@ -12,7 +13,7 @@ import { MousePointer2 } from "lucide-react";
 import type { CSSProperties, RefObject } from "react";
 
 import type { PresenceConnection } from "../../utils/presence";
-import type { DiagramEdge, DiagramNode } from "./diagramEditorModel";
+import { DIAGRAM_EDGE_TYPE, type DiagramEdge, type DiagramNode } from "./diagramEditorModel";
 import styles from "./DiagramCanvas.module.css";
 
 type DiagramCanvasProps = {
@@ -58,8 +59,9 @@ export function DiagramCanvas({
 				<ReactFlow
 					nodes={nodes}
 					edges={edges}
-					connectionLineType={ConnectionLineType.Straight}
-					defaultEdgeOptions={{ type: "straight" }}
+					connectionMode={ConnectionMode.Loose}
+					connectionLineType={ConnectionLineType.SmoothStep}
+					defaultEdgeOptions={{ type: DIAGRAM_EDGE_TYPE }}
 					nodeTypes={nodeTypes}
 					onInit={onInit}
 					onNodesChange={onNodesChange}

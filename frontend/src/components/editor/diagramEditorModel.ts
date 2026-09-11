@@ -25,7 +25,11 @@ export type DiagramNodeData = StoredNodeData & {
 export type DiagramNode = Node<DiagramNodeData>;
 export type DiagramEdge = Edge;
 
-export const DIAGRAM_EDGE_TYPE = "straight" as const;
+export const DIAGRAM_EDGE_TYPE = "smoothstep" as const;
+
+export function normalizeHandleId(handleId?: string | null) {
+	return handleId?.replace(/-(source|target)$/, "") || undefined;
+}
 
 export type StoredNode = {
 	id: string;
@@ -141,8 +145,8 @@ export function toStoredEdge(edge: DiagramEdge): StoredEdge {
 		id: edge.id,
 		source: edge.source,
 		target: edge.target,
-		sourceHandle: edge.sourceHandle ?? undefined,
-		targetHandle: edge.targetHandle ?? undefined,
+		sourceHandle: normalizeHandleId(edge.sourceHandle),
+		targetHandle: normalizeHandleId(edge.targetHandle),
 		type: DIAGRAM_EDGE_TYPE,
 		label: typeof edge.label === "string" ? edge.label : undefined,
 		animated: edge.animated,
@@ -154,8 +158,8 @@ export function toFlowEdge(edge: StoredEdge): DiagramEdge {
 		id: edge.id,
 		source: edge.source,
 		target: edge.target,
-		sourceHandle: edge.sourceHandle,
-		targetHandle: edge.targetHandle,
+		sourceHandle: normalizeHandleId(edge.sourceHandle),
+		targetHandle: normalizeHandleId(edge.targetHandle),
 		type: DIAGRAM_EDGE_TYPE,
 		label: edge.label,
 		animated: edge.animated,
@@ -284,6 +288,8 @@ export function makeDefaultEdges(): StoredEdge[] {
 			id: "edge-client-api",
 			source: "node-client",
 			target: "node-api",
+			sourceHandle: "right",
+			targetHandle: "left",
 			type: DIAGRAM_EDGE_TYPE,
 			label: "HTTPS",
 		},
