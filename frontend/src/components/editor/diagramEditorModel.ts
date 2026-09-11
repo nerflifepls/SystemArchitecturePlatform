@@ -256,6 +256,44 @@ export function commentSizesEqual(left: CommentSize | undefined, right: CommentS
 	return leftSize.width === rightSize.width && leftSize.height === rightSize.height;
 }
 
+export function isNodeInsideBoundary(boundary: DiagramNode, node: DiagramNode) {
+	if (boundary.type !== "boundary" || boundary.id === node.id) {
+		return false;
+	}
+
+	const boundaryWidth = getNodeDimension(boundary, "width", BOUNDARY_DEFAULT_SIZE.width);
+	const boundaryHeight = getNodeDimension(boundary, "height", BOUNDARY_DEFAULT_SIZE.height);
+	const nodeWidth = getNodeDimension(node, "width", 0);
+	const nodeHeight = getNodeDimension(node, "height", 0);
+	const nodeCenterX = node.position.x + nodeWidth / 2;
+	const nodeCenterY = node.position.y + nodeHeight / 2;
+
+	return (
+		nodeCenterX >= boundary.position.x &&
+		nodeCenterX <= boundary.position.x + boundaryWidth &&
+		nodeCenterY >= boundary.position.y &&
+		nodeCenterY <= boundary.position.y + boundaryHeight
+	);
+}
+
+function getNodeDimension(node: DiagramNode, dimension: "width" | "height", fallback: number) {
+	const styleValue = node.style?.[dimension];
+	const candidates = [
+		node.measured?.[dimension],
+		node[dimension],
+		node.data.size?.[dimension],
+		typeof styleValue === "number" ? styleValue : undefined,
+	];
+
+	for (const candidate of candidates) {
+		if (typeof candidate === "number" && Number.isFinite(candidate)) {
+			return candidate;
+		}
+	}
+
+	return fallback;
+}
+
 export function commentNodeDataMatches(
 	data: DiagramNodeData,
 	comment: StoredComment,
@@ -303,6 +341,82 @@ export function snapNodePosition(nodeId: string, position: FlowPosition, current
 	}
 
 	return { x: snappedX, y: snappedY };
+}
+
+export function expandBoundaryDragChanges(
+	changes: NodeChange<DiagramNode>[],
+	currentNodes: DiagramNode[],
+	dragSessions: Map<string, Set<string>>,
+) {
+	const nodesById = new Map(currentNodes.map((node) => [node.id, node]));
+	const explicitlyPositionedIds = new Set(
+		changes.flatMap((change) => {
+			if (change.type === "position" || change.type === "remove" || change.type === "replace") {
+				return [getNodeChangeId(change)];
+			}
+
+			return [];
+		}),
+	);
+	const groupedNodeIds = new Set<string>();
+	const groupedChanges: NodeChange<DiagramNode>[] = [];
+	for (const change of changes) {
+		if (change.type === "remove" && nodesById.get(change.id)?.type === "boundary") {
+			dragSessions.delete(change.id);
+		}
+	}
+
+	for (const change of changes) {
+		if (change.type !== "position" || !change.position || typeof change.dragging !== "boolean") {
+			continue;
+		}
+
+		const boundary = nodesById.get(change.id);
+		if (boundary?.type !== "boundary") {
+			continue;
+		}
+
+		let containedNodeIds = dragSessions.get(boundary.id);
+		if (!containedNodeIds) {
+			containedNodeIds = new Set(
+				currentNodes.filter((node) => isNodeInsideBoundary(boundary, node)).map((node) => node.id),
+			);
+			dragSessions.set(boundary.id, containedNodeIds);
+		}
+
+		const delta = {
+			x: change.position.x - boundary.position.x,
+			y: change.position.y - boundary.position.y,
+		};
+
+		for (const nodeId of containedNodeIds) {
+			groupedNodeIds.add(nodeId);
+			if (explicitlyPositionedIds.has(nodeId)) {
+				continue;
+			}
+
+			const node = nodesById.get(nodeId);
+			if (!node) {
+				continue;
+			}
+
+			groupedChanges.push({
+				id: nodeId,
+				type: "position",
+				position: {
+					x: node.position.x + delta.x,
+					y: node.position.y + delta.y,
+				},
+				dragging: change.dragging,
+			});
+		}
+
+		if (change.dragging === false) {
+			dragSessions.delete(boundary.id);
+		}
+	}
+
+	return { changes: [...changes, ...groupedChanges], groupedNodeIds };
 }
 
 export function makeDefaultNodes(): StoredNode[] {

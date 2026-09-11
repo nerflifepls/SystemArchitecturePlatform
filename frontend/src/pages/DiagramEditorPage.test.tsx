@@ -6,13 +6,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import * as Y from "yjs";
 
 import { crdtApi, diagramApi } from "../api/endpoints";
-import type { DiagramNode, StoredNode } from "../components/editor/diagramEditorModel";
+import type { DiagramNode, StoredComment, StoredNode } from "../components/editor/diagramEditorModel";
 import { DiagramEditorPage } from "./DiagramEditorPage";
 
 const canvasProbe = vi.hoisted(() => ({
 	renderCount: 0,
 	selectionHandlers: new Set<unknown>(),
-	latestNodes: [] as Array<{ id: string; type?: string; width?: number; height?: number }>,
+	latestNodes: [] as DiagramNode[],
 	onNodesChange: undefined as undefined | ((changes: NodeChange<DiagramNode>[]) => void),
 }));
 
@@ -64,7 +64,7 @@ vi.mock("../components/editor/DiagramCanvas", async () => {
 			onNodesChange,
 			onSelectionChange,
 		}: {
-			nodes: Array<{ id: string; type?: string; width?: number; height?: number }>;
+			nodes: DiagramNode[];
 			onNodesChange: (changes: NodeChange<DiagramNode>[]) => void;
 			onSelectionChange: (selection: { nodes: never[]; edges: never[] }) => void;
 		}) => {
@@ -327,6 +327,141 @@ describe("DiagramEditorPage integration", () => {
 			width: 760,
 			height: 510,
 		});
+		coldReconnectDoc.destroy();
+	});
+
+	it("moves and durably persists everything contained by a dragged boundary", async () => {
+		const initialDoc = new Y.Doc();
+		const initialNodes = initialDoc.getMap<StoredNode>("nodes");
+		initialNodes.set("boundary", {
+			id: "boundary",
+			type: "boundary",
+			position: { x: 40, y: 60 },
+			data: { label: "System boundary", kind: "boundary" },
+			size: { width: 440, height: 280 },
+		});
+		initialNodes.set("inside", {
+			id: "inside",
+			type: "default",
+			position: { x: 100, y: 130 },
+			data: { label: "Backend API", kind: "service" },
+		});
+		initialNodes.set("outside", {
+			id: "outside",
+			type: "default",
+			position: { x: 600, y: 130 },
+			data: { label: "Partner API", kind: "external" },
+		});
+		initialDoc.getMap<StoredComment>("comments").set("comment-inside", {
+			id: "comment-inside",
+			position: { x: 180, y: 180 },
+			size: { width: 200, height: 140 },
+			text: "Moves with the system",
+			authorName: "Researcher",
+			createdAt: new Date().toISOString(),
+		});
+		const initialSnapshot = Y.encodeStateAsUpdate(initialDoc);
+		initialDoc.destroy();
+
+		vi.mocked(diagramApi.get).mockResolvedValueOnce({
+			id: "diagram-1",
+			projectId: "project-1",
+			title: "Grouped boundary",
+			role: "editor",
+			snapshotVersion: 1,
+			lastUpdateSeq: 0,
+		});
+		vi.mocked(crdtApi.getSnapshot).mockResolvedValueOnce(initialSnapshot);
+		vi.mocked(crdtApi.postUpdate).mockResolvedValue({
+			seq: 1,
+			updateId: "group-update",
+			acceptedAt: new Date().toISOString(),
+		});
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter
+					initialEntries={[
+						"/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor",
+					]}
+				>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() =>
+			expect(canvasProbe.latestNodes.some((node) => node.id === "comment-inside")).toBe(true),
+		);
+		const onNodesChange = canvasProbe.onNodesChange;
+		expect(onNodesChange).toBeDefined();
+
+		act(() => {
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "position",
+					position: { x: 90, y: 100 },
+					dragging: true,
+				},
+			]);
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "position",
+					position: { x: 90, y: 100 },
+					dragging: false,
+				},
+			]);
+		});
+
+		await waitFor(() => {
+			expect(canvasProbe.latestNodes.find((node) => node.id === "boundary")?.position).toEqual({
+				x: 90,
+				y: 100,
+			});
+			expect(canvasProbe.latestNodes.find((node) => node.id === "inside")?.position).toEqual({
+				x: 150,
+				y: 170,
+			});
+			expect(canvasProbe.latestNodes.find((node) => node.id === "comment-inside")?.position).toEqual({
+				x: 230,
+				y: 220,
+			});
+			expect(canvasProbe.latestNodes.find((node) => node.id === "outside")?.position).toEqual({
+				x: 600,
+				y: 130,
+			});
+		});
+		await waitFor(() => expect(crdtApi.postUpdate).toHaveBeenCalledTimes(2));
+
+		const coldReconnectDoc = new Y.Doc();
+		Y.applyUpdate(coldReconnectDoc, initialSnapshot);
+		for (const call of vi.mocked(crdtApi.postUpdate).mock.calls) {
+			Y.applyUpdate(coldReconnectDoc, call[1]);
+		}
+
+		expect(coldReconnectDoc.getMap<StoredNode>("nodes").get("boundary")?.position).toEqual({
+			x: 90,
+			y: 100,
+		});
+		expect(coldReconnectDoc.getMap<StoredNode>("nodes").get("inside")?.position).toEqual({
+			x: 150,
+			y: 170,
+		});
+		expect(coldReconnectDoc.getMap<StoredNode>("nodes").get("outside")?.position).toEqual({
+			x: 600,
+			y: 130,
+		});
+		expect(
+			coldReconnectDoc.getMap<StoredComment>("comments").get("comment-inside")?.position,
+		).toEqual({ x: 230, y: 220 });
 		coldReconnectDoc.destroy();
 	});
 });

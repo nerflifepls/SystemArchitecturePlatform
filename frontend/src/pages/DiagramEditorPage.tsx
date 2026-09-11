@@ -51,6 +51,7 @@ import {
 	commentNodeDataMatches,
 	commentSizesEqual,
 	DIAGRAM_EDGE_TYPE,
+	expandBoundaryDragChanges,
 	getFallbackCommentPosition,
 	getNodeChangeId,
 	isCommentNodeId,
@@ -168,6 +169,7 @@ export function DiagramEditorPage() {
 	const pendingQueueRef = useRef<QueuedDiagramUpdate[]>([]);
 	const pendingLiveUpdatesRef = useRef<Uint8Array[]>([]);
 	const pendingLiveFlushTimerRef = useRef<number | null>(null);
+	const boundaryDragSessionsRef = useRef<Map<string, Set<string>>>(new Map());
 	const queueFlushPromiseRef = useRef<Promise<void> | null>(null);
 	const pendingQueueLoadedRef = useRef(false);
 	const reconnectAttemptsRef = useRef(0);
@@ -659,6 +661,7 @@ export function DiagramEditorPage() {
 		persistedUpdateSeqRef.current = 0;
 		pendingQueueRef.current = [];
 		pendingLiveUpdatesRef.current = [];
+		boundaryDragSessionsRef.current.clear();
 		if (pendingLiveFlushTimerRef.current) {
 			window.clearTimeout(pendingLiveFlushTimerRef.current);
 			pendingLiveFlushTimerRef.current = null;
@@ -1037,8 +1040,32 @@ export function DiagramEditorPage() {
 
 	const onNodesChange = useCallback(
 		(changes: NodeChange<DiagramNode>[]) => {
-			const regularChanges = changes.filter((change) => !isCommentNodeId(getNodeChangeId(change)));
-			const commentChanges = changes.filter((change) => isCommentNodeId(getNodeChangeId(change)));
+			const currentCommentNodes = commentsRef.current.map((comment, index) => {
+				const cachedNode = commentNodeCacheRef.current.get(comment.id);
+				if (cachedNode) {
+					return cachedNode;
+				}
+
+				const size = comment.size ?? COMMENT_DEFAULT_SIZE;
+				return {
+					id: comment.id,
+					type: "comment",
+					position: comment.position ?? getFallbackCommentPosition(index),
+					style: size,
+					data: { label: "Comment", kind: "comment", size },
+				} satisfies DiagramNode;
+			});
+			const expandedBoundaryDrag = expandBoundaryDragChanges(
+				changes,
+				[...nodesRef.current, ...currentCommentNodes],
+				boundaryDragSessionsRef.current,
+			);
+			const regularChanges = expandedBoundaryDrag.changes.filter(
+				(change) => !isCommentNodeId(getNodeChangeId(change)),
+			);
+			const commentChanges = expandedBoundaryDrag.changes.filter((change) =>
+				isCommentNodeId(getNodeChangeId(change)),
+			);
 
 			if (regularChanges.length > 0) {
 				const hasActiveBoundaryResize = regularChanges.some(
@@ -1048,7 +1075,11 @@ export function DiagramEditorPage() {
 						nodesRef.current.some((node) => node.id === change.id && node.type === "boundary"),
 				);
 				const snappedRegularChanges = regularChanges.map((change) => {
-					if (change.type !== "position" || !change.position) {
+					if (
+						change.type !== "position" ||
+						!change.position ||
+						expandedBoundaryDrag.groupedNodeIds.has(change.id)
+					) {
 						return change;
 					}
 
@@ -2013,6 +2044,7 @@ export function DiagramEditorPage() {
 							return;
 						}
 
+						boundaryDragSessionsRef.current.delete(node.id);
 						persistNodePosition(node.id, node.position);
 					}}
 					onPaneClick={(event) => {
