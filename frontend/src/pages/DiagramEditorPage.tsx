@@ -7,6 +7,7 @@ import {
 	type Connection,
 	type EdgeChange,
 	type NodeChange,
+	type OnSelectionChangeFunc,
 } from "@xyflow/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent } from "react";
@@ -90,6 +91,10 @@ type SnapshotIntent = {
 	name?: string;
 	reason: DiagramSnapshotDto["reason"];
 };
+
+function haveSameSelectionIds(current: string[], next: string[]) {
+	return current.length === next.length && current.every((id, index) => id === next[index]);
+}
 
 export function DiagramEditorPage() {
 	const { workspaceId = "", projectId = "", diagramId = "" } = useParams();
@@ -1253,6 +1258,29 @@ export function DiagramEditorPage() {
 		sendPresenceUpdate(null, true);
 	}, [sendPresenceUpdate]);
 
+	const handleSelectionChange = useCallback<OnSelectionChangeFunc<DiagramNode, DiagramEdge>>(
+		({ nodes: selectedNodes, edges: selectedEdges }) => {
+			const selectedDiagramNodes = selectedNodes.filter((node) => !isCommentNodeId(node.id));
+			const selectedDiagramNode = selectedDiagramNodes[0];
+			const selectedDiagramEdge = selectedEdges[0];
+			const nextSelectedNodeIds = selectedDiagramNodes.map((node) => node.id);
+
+			setSelectedNodeIds((current) =>
+				haveSameSelectionIds(current, nextSelectedNodeIds) ? current : nextSelectedNodeIds,
+			);
+
+			if (selectedDiagramNode) {
+				setSelectedNodeId(selectedDiagramNode.id);
+				setSelectedEdgeId(null);
+				return;
+			}
+
+			setSelectedNodeId(null);
+			setSelectedEdgeId(selectedDiagramEdge?.id ?? null);
+		},
+		[],
+	);
+
 	function addNode() {
 		const nodeCount = nodesRef.current.length;
 		const node: StoredNode = {
@@ -1860,21 +1888,7 @@ export function DiagramEditorPage() {
 					onEdgesChange={onEdgesChange}
 					onConnect={onConnect}
 					onReconnect={onReconnect}
-					onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
-						const selectedDiagramNodes = selectedNodes.filter((node) => !isCommentNodeId(node.id));
-						const selectedDiagramNode = selectedDiagramNodes[0];
-						const selectedDiagramEdge = selectedEdges[0];
-						setSelectedNodeIds(selectedDiagramNodes.map((node) => node.id));
-
-						if (selectedDiagramNode) {
-							setSelectedNodeId(selectedDiagramNode.id);
-							setSelectedEdgeId(null);
-							return;
-						}
-
-						setSelectedNodeId(null);
-						setSelectedEdgeId(selectedDiagramEdge?.id ?? null);
-					}}
+					onSelectionChange={handleSelectionChange}
 					onNodeDragStop={(_, node) => {
 						if (isCommentNodeId(node.id)) {
 							persistCommentPosition(node.id, node.position);
