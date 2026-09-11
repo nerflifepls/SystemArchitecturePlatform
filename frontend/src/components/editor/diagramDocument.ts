@@ -1,4 +1,6 @@
 import {
+	BOUNDARY_DEFAULT_SIZE,
+	clampBoundarySize,
 	toStoredEdge,
 	toStoredNode,
 	type DiagramEdge,
@@ -33,8 +35,6 @@ type Bounds = {
 
 const DEFAULT_NODE_WIDTH = 190;
 const DEFAULT_NODE_HEIGHT = 78;
-const BOUNDARY_WIDTH = 440;
-const BOUNDARY_HEIGHT = 280;
 const EXPORT_PADDING = 70;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,7 +54,9 @@ function escapeXml(value: string) {
 }
 
 function nodeDimensions(node: StoredNode) {
-	return node.type === "boundary" ? { width: BOUNDARY_WIDTH, height: BOUNDARY_HEIGHT } : { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
+	return node.type === "boundary" ?
+		clampBoundarySize(node.size ?? BOUNDARY_DEFAULT_SIZE)
+	: { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
 }
 
 function diagramBounds(nodes: StoredNode[], comments: StoredComment[]): Bounds {
@@ -157,14 +159,25 @@ export function parseDiagramDocument(value: string): DiagramDocument {
 		if (!safeText(value.id).trim() || !Number.isFinite(x) || !Number.isFinite(y)) {
 			throw new Error(`Node ${index + 1} has an invalid id or position.`);
 		}
+		const isBoundary = value.type === "boundary";
+		if (isBoundary && value.size !== undefined && !isRecord(value.size)) {
+			throw new Error(`Boundary ${index + 1} has an invalid size.`);
+		}
+		const rawBoundarySize = isRecord(value.size) ?
+			{ width: Number(value.size.width), height: Number(value.size.height) }
+		: BOUNDARY_DEFAULT_SIZE;
+		if (isBoundary && (!Number.isFinite(rawBoundarySize.width) || !Number.isFinite(rawBoundarySize.height))) {
+			throw new Error(`Boundary ${index + 1} has an invalid size.`);
+		}
 		return {
 			id: safeText(value.id),
-			type: value.type === "boundary" ? "boundary" : "default",
+			type: isBoundary ? "boundary" : "default",
 			position: { x, y },
 			data: {
 				label: safeText(value.data.label, "Node"),
 				kind: safeText(value.data.kind, "component"),
 			},
+			...(isBoundary ? { size: clampBoundarySize(rawBoundarySize) } : {}),
 		};
 	});
 	const nodeIds = new Set(nodes.map((node) => node.id));

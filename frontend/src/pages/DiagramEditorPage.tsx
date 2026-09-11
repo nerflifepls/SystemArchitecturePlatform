@@ -38,6 +38,7 @@ import {
 	type QueuedDiagramUpdate,
 } from "../components/editor/offlineUpdateQueue";
 import {
+	BOUNDARY_DEFAULT_SIZE,
 	COMMENT_DEFAULT_SIZE,
 	INITIAL_UPDATE_COMPACTION_THRESHOLD,
 	INIT_ORIGIN,
@@ -162,6 +163,7 @@ export function DiagramEditorPage() {
 	const persistedUpdateSeqRef = useRef(0);
 	const pendingUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set());
 	const pendingQueueRef = useRef<QueuedDiagramUpdate[]>([]);
+	const pendingLiveUpdatesRef = useRef<Uint8Array[]>([]);
 	const queueFlushPromiseRef = useRef<Promise<void> | null>(null);
 	const pendingQueueLoadedRef = useRef(false);
 	const reconnectAttemptsRef = useRef(0);
@@ -617,6 +619,7 @@ export function DiagramEditorPage() {
 		pendingQueueLoadedRef.current = false;
 		persistedUpdateSeqRef.current = 0;
 		pendingQueueRef.current = [];
+		pendingLiveUpdatesRef.current = [];
 		setPendingUpdateCount(0);
 		setLastUpdateSeq(0);
 		setSnapshotVersion(1);
@@ -722,13 +725,18 @@ export function DiagramEditorPage() {
 			}
 
 			if (origin === LIVE_DRAG_ORIGIN) {
+				pendingLiveUpdatesRef.current.push(new Uint8Array(update));
 				if (websocketRef.current?.readyState === WebSocket.OPEN) {
 					websocketRef.current.send(toArrayBuffer(update));
 				}
 				return;
 			}
 
-			enqueuePendingUpdate(update);
+			const pendingLiveUpdates = pendingLiveUpdatesRef.current;
+			pendingLiveUpdatesRef.current = [];
+			enqueuePendingUpdate(
+				pendingLiveUpdates.length > 0 ? Y.mergeUpdates([...pendingLiveUpdates, update]) : update,
+			);
 			scheduleSnapshotSave();
 		};
 
@@ -973,6 +981,12 @@ export function DiagramEditorPage() {
 			const commentChanges = changes.filter((change) => isCommentNodeId(getNodeChangeId(change)));
 
 			if (regularChanges.length > 0) {
+				const hasActiveBoundaryResize = regularChanges.some(
+					(change) =>
+						change.type === "dimensions" &&
+						change.resizing === true &&
+						nodesRef.current.some((node) => node.id === change.id && node.type === "boundary"),
+				);
 				const snappedRegularChanges = regularChanges.map((change) => {
 					if (change.type !== "position" || !change.position) {
 						return change;
@@ -997,9 +1011,17 @@ export function DiagramEditorPage() {
 						case "position":
 							if (change.position) {
 								changedNodeIds.add(change.id);
-								shouldPersistRegularChanges ||= change.dragging !== true;
+								shouldPersistRegularChanges ||= !hasActiveBoundaryResize && change.dragging !== true;
 							}
 							break;
+						case "dimensions": {
+							const changedNode = nextNodes.find((node) => node.id === change.id);
+							if (changedNode?.type === "boundary" && typeof change.resizing === "boolean") {
+								changedNodeIds.add(change.id);
+								shouldPersistRegularChanges ||= change.resizing === false;
+							}
+							break;
+						}
 						case "remove":
 							removedNodeIds.add(change.id);
 							shouldPersistRegularChanges = true;
@@ -1322,6 +1344,7 @@ export function DiagramEditorPage() {
 			type: "boundary",
 			position: { x: center.x - 220, y: center.y - 140 },
 			data: { label: "System boundary", kind: "boundary" },
+			size: BOUNDARY_DEFAULT_SIZE,
 		};
 		const nextNodes = [
 			{ ...toFlowNode(boundary), selected: true },
@@ -1728,6 +1751,12 @@ export function DiagramEditorPage() {
 	}
 
 	const flowNodes = useMemo(() => {
+		const diagramFlowNodes = nodes.map((node) => {
+			if (node.type !== "boundary" || Boolean(node.data.readOnly) === readOnly) {
+				return node;
+			}
+			return { ...node, data: { ...node.data, readOnly } };
+		});
 		const previousCommentNodes = commentNodeCacheRef.current;
 		const nextCommentNodes = new Map<string, DiagramNode>();
 		const commentFlowNodes = comments.map((comment, index) => {
@@ -1782,7 +1811,7 @@ export function DiagramEditorPage() {
 		});
 
 		commentNodeCacheRef.current = nextCommentNodes;
-		return [...nodes, ...commentFlowNodes];
+		return [...diagramFlowNodes, ...commentFlowNodes];
 	}, [canEdit, clearFocusedComment, comments, focusedCommentId, nodes, readOnly, removeComment, updateCommentSize, updateCommentText]);
 
 	useEffect(() => {

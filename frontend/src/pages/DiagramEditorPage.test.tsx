@@ -1,13 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { NodeChange } from "@xyflow/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import * as Y from "yjs";
 
+import { crdtApi, diagramApi } from "../api/endpoints";
+import type { DiagramNode, StoredNode } from "../components/editor/diagramEditorModel";
 import { DiagramEditorPage } from "./DiagramEditorPage";
 
 const canvasProbe = vi.hoisted(() => ({
 	renderCount: 0,
 	selectionHandlers: new Set<unknown>(),
+	latestNodes: [] as Array<{ id: string; type?: string; width?: number; height?: number }>,
+	onNodesChange: undefined as undefined | ((changes: NodeChange<DiagramNode>[]) => void),
 }));
 
 vi.mock("../api/endpoints", () => ({
@@ -54,12 +60,18 @@ vi.mock("../components/editor/DiagramCanvas", async () => {
 
 	return {
 		DiagramCanvas: ({
+			nodes,
+			onNodesChange,
 			onSelectionChange,
 		}: {
+			nodes: Array<{ id: string; type?: string; width?: number; height?: number }>;
+			onNodesChange: (changes: NodeChange<DiagramNode>[]) => void;
 			onSelectionChange: (selection: { nodes: never[]; edges: never[] }) => void;
 		}) => {
 			canvasProbe.renderCount += 1;
 			canvasProbe.selectionHandlers.add(onSelectionChange);
+			canvasProbe.latestNodes = nodes;
+			canvasProbe.onNodesChange = onNodesChange;
 			React.useEffect(() => {
 				onSelectionChange({ nodes: [], edges: [] });
 			}, [onSelectionChange]);
@@ -88,6 +100,10 @@ describe("DiagramEditorPage selection integration", () => {
 	beforeEach(() => {
 		canvasProbe.renderCount = 0;
 		canvasProbe.selectionHandlers.clear();
+		canvasProbe.latestNodes = [];
+		canvasProbe.onNodesChange = undefined;
+		localStorage.clear();
+		vi.clearAllMocks();
 		vi.stubGlobal("WebSocket", IdleWebSocket);
 	});
 
@@ -121,5 +137,98 @@ describe("DiagramEditorPage selection integration", () => {
 		expect(screen.getByTestId("diagram-canvas")).toBeInTheDocument();
 		await waitFor(() => expect(canvasProbe.renderCount).toBeGreaterThan(1));
 		expect(canvasProbe.selectionHandlers.size).toBe(1);
+	});
+
+	it("persists the complete boundary resize as one durable Yjs update", async () => {
+		const initialDoc = new Y.Doc();
+		initialDoc.getMap<StoredNode>("nodes").set("boundary", {
+			id: "boundary",
+			type: "boundary",
+			position: { x: 40, y: 60 },
+			data: { label: "System boundary", kind: "boundary" },
+			size: { width: 440, height: 280 },
+		});
+		const initialSnapshot = Y.encodeStateAsUpdate(initialDoc);
+		initialDoc.destroy();
+
+		vi.mocked(diagramApi.get).mockResolvedValueOnce({
+			id: "diagram-1",
+			projectId: "project-1",
+			title: "Resizable boundary",
+			role: "editor",
+			snapshotVersion: 1,
+			lastUpdateSeq: 0,
+		});
+		vi.mocked(crdtApi.getSnapshot).mockResolvedValueOnce(initialSnapshot);
+		vi.mocked(crdtApi.postUpdate).mockResolvedValue({
+			seq: 1,
+			updateId: "update-1",
+			acceptedAt: new Date().toISOString(),
+		});
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter
+					initialEntries={[
+						"/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor",
+					]}
+				>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() =>
+			expect(canvasProbe.latestNodes.some((node) => node.id === "boundary")).toBe(true),
+		);
+		const onNodesChange = canvasProbe.onNodesChange;
+		expect(onNodesChange).toBeDefined();
+
+		act(() => {
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "dimensions",
+					dimensions: { width: 640, height: 420 },
+					resizing: true,
+					setAttributes: true,
+				},
+			]);
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "dimensions",
+					dimensions: { width: 700, height: 460 },
+					resizing: true,
+					setAttributes: true,
+				},
+			]);
+			onNodesChange?.([
+				{
+					id: "boundary",
+					type: "dimensions",
+					dimensions: { width: 700, height: 460 },
+					resizing: false,
+				},
+			]);
+		});
+
+		await waitFor(() => expect(crdtApi.postUpdate).toHaveBeenCalledTimes(1));
+		const durableUpdate = vi.mocked(crdtApi.postUpdate).mock.calls[0][1];
+		const restoredDoc = new Y.Doc();
+		Y.applyUpdate(restoredDoc, initialSnapshot);
+		Y.applyUpdate(restoredDoc, durableUpdate);
+
+		expect(restoredDoc.getMap<StoredNode>("nodes").get("boundary")?.size).toEqual({
+			width: 700,
+			height: 460,
+		});
+		restoredDoc.destroy();
 	});
 });

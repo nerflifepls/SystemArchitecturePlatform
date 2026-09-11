@@ -1,10 +1,12 @@
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Trash2 } from "lucide-react";
 import { memo, useEffect, useRef, type PointerEvent } from "react";
 
 import { classNames } from "../ui/classNames";
 import styles from "./DiagramNodes.module.css";
 import {
+	BOUNDARY_MAX_SIZE,
+	BOUNDARY_MIN_SIZE,
 	COMMENT_DEFAULT_SIZE,
 	clampCommentSize,
 	commentSizesEqual,
@@ -46,7 +48,8 @@ function areBoundaryNodePropsEqual(
 	return (
 		previous.selected === next.selected &&
 		previous.data.label === next.data.label &&
-		previous.data.kind === next.data.kind
+		previous.data.kind === next.data.kind &&
+		previous.data.readOnly === next.data.readOnly
 	);
 }
 
@@ -72,6 +75,16 @@ export const DiagramBoundaryNode = memo(function DiagramBoundaryNode({
 }: NodeProps<Node<DiagramNodeData, "boundary">>) {
 	return (
 		<section className={classNames(styles.boundaryNode, selected && styles.selected)}>
+			<NodeResizer
+				isVisible={selected && !data.readOnly}
+				minWidth={BOUNDARY_MIN_SIZE.width}
+				minHeight={BOUNDARY_MIN_SIZE.height}
+				maxWidth={BOUNDARY_MAX_SIZE.width}
+				maxHeight={BOUNDARY_MAX_SIZE.height}
+				color="var(--primary-glow)"
+				handleClassName={styles.boundaryResizeHandle}
+				lineClassName={styles.boundaryResizeLine}
+			/>
 			<span>{data.kind}</span>
 			<strong>{data.label}</strong>
 		</section>

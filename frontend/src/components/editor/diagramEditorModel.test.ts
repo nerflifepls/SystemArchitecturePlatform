@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { DIAGRAM_EDGE_TYPE, normalizeHandleId, snapNodePosition, toFlowEdge, toStoredEdge, type DiagramNode } from "./diagramEditorModel";
+import {
+	BOUNDARY_DEFAULT_SIZE,
+	BOUNDARY_MAX_SIZE,
+	BOUNDARY_MIN_SIZE,
+	DIAGRAM_EDGE_TYPE,
+	clampBoundarySize,
+	normalizeHandleId,
+	snapNodePosition,
+	toFlowEdge,
+	toFlowNode,
+	toStoredEdge,
+	toStoredNode,
+	type DiagramNode,
+} from "./diagramEditorModel";
 
 describe("diagram edge routing", () => {
 	it("restores rounded orthogonal routing for saved edges", () => {
@@ -38,5 +51,33 @@ describe("diagram edge routing", () => {
 		];
 		expect(snapNodePosition("service", { x: 108, y: 109 }, nodes)).toEqual({ x: 108, y: 109 });
 		expect(snapNodePosition("boundary", { x: 115, y: 116 }, nodes)).toEqual({ x: 115, y: 116 });
+	});
+
+	it("round-trips resizable boundary dimensions", () => {
+		const flowNode = toFlowNode({
+			id: "boundary",
+			type: "boundary",
+			position: { x: 80, y: 90 },
+			data: { label: "Trust zone", kind: "boundary" },
+			size: { width: 780, height: 520 },
+		});
+
+		expect({ width: flowNode.width, height: flowNode.height }).toEqual({ width: 780, height: 520 });
+		expect(toStoredNode(flowNode).size).toEqual({ width: 780, height: 520 });
+	});
+
+	it("provides safe defaults and limits for boundary dimensions", () => {
+		const legacyBoundary = toFlowNode({
+			id: "legacy-boundary",
+			type: "boundary",
+			position: { x: 0, y: 0 },
+			data: { label: "Legacy", kind: "boundary" },
+		});
+
+		expect({ width: legacyBoundary.width, height: legacyBoundary.height }).toEqual(BOUNDARY_DEFAULT_SIZE);
+		expect(clampBoundarySize({ width: 20, height: 4000 })).toEqual({
+			width: BOUNDARY_MIN_SIZE.width,
+			height: BOUNDARY_MAX_SIZE.height,
+		});
 	});
 });

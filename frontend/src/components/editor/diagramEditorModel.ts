@@ -36,6 +36,7 @@ export type StoredNode = {
 	type?: string;
 	position: { x: number; y: number };
 	data: StoredNodeData;
+	size?: BoundarySize;
 };
 
 export type StoredEdge = {
@@ -78,6 +79,8 @@ export type CommentSize = {
 	height: number;
 };
 
+export type BoundarySize = CommentSize;
+
 export const INIT_ORIGIN = "init";
 export const LOCAL_ORIGIN = "local";
 export const LIVE_DRAG_ORIGIN = "live-drag";
@@ -87,6 +90,8 @@ export const COMMENT_DEFAULT_SIZE = { width: 246, height: 154 };
 export const COMMENT_MIN_SIZE = { width: 190, height: 128 };
 export const COMMENT_MAX_SIZE = { width: 460, height: 360 };
 export const BOUNDARY_DEFAULT_SIZE = { width: 440, height: 280 };
+export const BOUNDARY_MIN_SIZE = { width: 260, height: 160 };
+export const BOUNDARY_MAX_SIZE = { width: 2400, height: 1600 };
 export const INITIAL_UPDATE_COMPACTION_THRESHOLD = 40;
 export const NODE_KIND_PRESETS = [
 	"component",
@@ -121,6 +126,14 @@ export const PROTOCOL_PRESETS = [
 ] as const;
 
 export function toStoredNode(node: DiagramNode): StoredNode {
+	const size =
+		node.type === "boundary" ?
+			clampBoundarySize({
+				width: finiteDimension(node.width ?? node.measured?.width, BOUNDARY_DEFAULT_SIZE.width),
+				height: finiteDimension(node.height ?? node.measured?.height, BOUNDARY_DEFAULT_SIZE.height),
+			})
+		: undefined;
+
 	return {
 		id: node.id,
 		type: node.type,
@@ -129,16 +142,19 @@ export function toStoredNode(node: DiagramNode): StoredNode {
 			label: String(node.data.label || "Node"),
 			kind: String(node.data.kind || "component"),
 		},
+		...(size ? { size } : {}),
 	};
 }
 
 export function toFlowNode(node: StoredNode): DiagramNode {
+	const size = clampBoundarySize(node.size ?? BOUNDARY_DEFAULT_SIZE);
+
 	return {
 		id: node.id,
 		type: node.type ?? "default",
 		position: node.position,
 		data: node.data,
-		...(node.type === "boundary" ? { style: BOUNDARY_DEFAULT_SIZE, zIndex: -1 } : {}),
+		...(node.type === "boundary" ? { width: size.width, height: size.height, zIndex: -1 } : {}),
 	};
 }
 
@@ -208,6 +224,25 @@ export function clampCommentSize(size: CommentSize) {
 		width: clampValue(size.width, COMMENT_MIN_SIZE.width, COMMENT_MAX_SIZE.width),
 		height: clampValue(size.height, COMMENT_MIN_SIZE.height, COMMENT_MAX_SIZE.height),
 	};
+}
+
+export function clampBoundarySize(size: BoundarySize) {
+	return {
+		width: clampValue(
+			finiteDimension(size.width, BOUNDARY_DEFAULT_SIZE.width),
+			BOUNDARY_MIN_SIZE.width,
+			BOUNDARY_MAX_SIZE.width,
+		),
+		height: clampValue(
+			finiteDimension(size.height, BOUNDARY_DEFAULT_SIZE.height),
+			BOUNDARY_MIN_SIZE.height,
+			BOUNDARY_MAX_SIZE.height,
+		),
+	};
+}
+
+function finiteDimension(value: number | undefined, fallback: number) {
+	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 export function positionsEqual(left: FlowPosition | undefined, right: FlowPosition) {

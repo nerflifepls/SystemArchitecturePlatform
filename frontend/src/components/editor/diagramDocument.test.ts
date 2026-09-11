@@ -32,4 +32,23 @@ describe("portable diagram documents", () => {
 		expect(svg).toContain("marker-end=\"url(#arrow)\"");
 		expect(pdf.startsWith("%PDF-1.4")).toBe(true);
 	});
+
+	it("preserves resized boundaries in JSON and visual exports", () => {
+		const boundary: DiagramNode = {
+			id: "boundary",
+			type: "boundary",
+			position: { x: 10, y: 20 },
+			width: 760,
+			height: 510,
+			data: { label: "Production zone", kind: "boundary" },
+		};
+		const documentModel = createDiagramDocument("Bounded system", [...nodes, boundary], edges, []);
+		const parsed = parseDiagramDocument(JSON.stringify(documentModel));
+
+		expect(parsed.diagram.nodes.find((node) => node.id === "boundary")?.size).toEqual({
+			width: 760,
+			height: 510,
+		});
+		expect(renderDiagramSvg(parsed)).toContain('width="760" height="510"');
+	});
 });
