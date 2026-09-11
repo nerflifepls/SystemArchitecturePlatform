@@ -77,6 +77,9 @@ export function DiagramCanvas({
 					onPointerMove={onPointerMove}
 					onPointerLeave={onPointerLeave}
 					deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
+					selectionOnDrag={!readOnly}
+					panOnDrag={[1, 2]}
+					multiSelectionKeyCode="Shift"
 					fitView
 					minZoom={0.2}
 					maxZoom={1.8}

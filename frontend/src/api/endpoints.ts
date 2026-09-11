@@ -10,6 +10,7 @@ import type {
 	CreateWorkspaceDto,
 	DiagramResponseDto,
 	DiagramDto,
+	DiagramSnapshotDto,
 	GoogleAuthRequestDto,
 	ListResponse,
 	ProjectResponseDto,
@@ -201,10 +202,31 @@ export const crdtApi = {
 			headers: { "X-Update-Id": updateId, "X-Client-Id": clientId },
 		});
 	},
-	saveSnapshot(diagramId: string, snapshot: Uint8Array, baseUpdateSeq: number, clientId: string) {
+	async listSnapshots(diagramId: string, signal?: AbortSignal) {
+		const response = await requestJson<ListResponse<DiagramSnapshotDto>>(
+			`/api/v1/diagrams/${diagramId}/snapshots`,
+			{ signal },
+		);
+		return response.items;
+	},
+	getSnapshotVersion(diagramId: string, snapshotVersion: number, signal?: AbortSignal) {
+		return requestBinary(`/api/v1/diagrams/${diagramId}/snapshots/${snapshotVersion}`, { signal });
+	},
+	saveSnapshot(
+		diagramId: string,
+		snapshot: Uint8Array,
+		baseUpdateSeq: number,
+		clientId: string,
+		options: { name?: string; reason?: DiagramSnapshotDto["reason"] } = {},
+	) {
 		return sendBinary<CrdtSnapshotAckDto>(`/api/v1/diagrams/${diagramId}/snapshot`, snapshot, {
 			method: "PUT",
-			headers: { "X-Base-Update-Seq": String(baseUpdateSeq), "X-Client-Id": clientId },
+			headers: {
+				"X-Base-Update-Seq": String(baseUpdateSeq),
+				"X-Client-Id": clientId,
+				...(options.name ? { "X-Snapshot-Name": options.name } : {}),
+				...(options.reason ? { "X-Snapshot-Reason": options.reason } : {}),
+			},
 		});
 	},
 };

@@ -8,17 +8,34 @@ import {
 	type EdgeChange,
 	type NodeChange,
 } from "@xyflow/react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent } from "react";
 import { useParams } from "react-router-dom";
 import * as Y from "yjs";
 
 import { ApiError } from "../api/client";
 import { crdtApi, diagramApi } from "../api/endpoints";
-import type { CrdtUpdatesResponseDto, PresenceCursorDto } from "../api/types";
+import type { CrdtUpdatesResponseDto, DiagramSnapshotDto, PresenceCursorDto } from "../api/types";
 import { DiagramCanvas } from "../components/editor/DiagramCanvas";
 import { DiagramEditorPanel } from "../components/editor/DiagramEditorPanel";
-import { CommentNode, DiagramComponentNode } from "../components/editor/DiagramNodes";
+import { CommentNode, DiagramBoundaryNode, DiagramComponentNode } from "../components/editor/DiagramNodes";
+import { analyzeArchitecture, type ArchitectureInsight } from "../components/editor/architectureInsights";
+import {
+	createDiagramDocument,
+	exportDiagram,
+	parseDiagramDocument,
+} from "../components/editor/diagramDocument";
+import {
+	alignDiagramNodes,
+	autoLayoutDiagram,
+	type AlignmentAxis,
+	type LayoutDirection,
+} from "../components/editor/diagramLayout";
+import {
+	readPendingQueue,
+	writePendingQueue,
+	type QueuedDiagramUpdate,
+} from "../components/editor/offlineUpdateQueue";
 import {
 	COMMENT_DEFAULT_SIZE,
 	INITIAL_UPDATE_COMPACTION_THRESHOLD,
@@ -69,8 +86,14 @@ import {
 } from "../utils/presence";
 import styles from "./DiagramEditorPage.module.css";
 
+type SnapshotIntent = {
+	name?: string;
+	reason: DiagramSnapshotDto["reason"];
+};
+
 export function DiagramEditorPage() {
 	const { workspaceId = "", projectId = "", diagramId = "" } = useParams();
+	const queryClient = useQueryClient();
 	const doc = useMemo(() => new Y.Doc({ guid: diagramId }), [diagramId]);
 	const maps = useMemo(
 		() => ({
@@ -80,6 +103,14 @@ export function DiagramEditorPage() {
 			comments: doc.getMap<StoredComment>("comments"),
 		}),
 		[doc],
+	);
+	const undoManager = useMemo(
+		() =>
+			new Y.UndoManager([maps.nodes, maps.edges, maps.comments], {
+				trackedOrigins: new Set([LOCAL_ORIGIN]),
+				captureTimeout: 350,
+			}),
+		[maps.comments, maps.edges, maps.nodes],
 	);
 	const [nodes, setNodes] = useState<DiagramNode[]>([]);
 	const [edges, setEdges] = useState<DiagramEdge[]>([]);
@@ -91,10 +122,21 @@ export function DiagramEditorPage() {
 	const [ownConnectionId, setOwnConnectionId] = useState<string | null>(null);
 	const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 	const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+	const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 	const [nodeLabelDraft, setNodeLabelDraft] = useState("");
 	const [edgeLabelDraft, setEdgeLabelDraft] = useState("");
 	const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
 	const [isSidePanelCollapsed, setIsSidePanelCollapsed] = useState(false);
+	const [pendingUpdateCount, setPendingUpdateCount] = useState(0);
+	const [snapshotVersion, setSnapshotVersion] = useState(1);
+	const [lastUpdateSeq, setLastUpdateSeq] = useState(0);
+	const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+	const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
+	const [reconnectAttempt, setReconnectAttempt] = useState(0);
+	const [websocketGeneration, setWebsocketGeneration] = useState(0);
+	const [canUndo, setCanUndo] = useState(false);
+	const [canRedo, setCanRedo] = useState(false);
+	const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
 	const nodesRef = useRef<DiagramNode[]>([]);
 	const edgesRef = useRef<DiagramEdge[]>([]);
 	const commentsRef = useRef<StoredComment[]>([]);
@@ -104,6 +146,9 @@ export function DiagramEditorPage() {
 	const reactFlowInstanceRef = useRef<ReactFlowInstance<DiagramNode, DiagramEdge> | null>(null);
 	const snapshotTimerRef = useRef<number | null>(null);
 	const persistedSyncTimerRef = useRef<number | null>(null);
+	const reconnectTimerRef = useRef<number | null>(null);
+	const pingTimerRef = useRef<number | null>(null);
+	const pingSentAtRef = useRef<number | null>(null);
 	const snapshotAppliedRef = useRef(false);
 	const initialUpdatesAppliedRef = useRef(false);
 	const clientIdRef = useRef(crypto.randomUUID());
@@ -111,6 +156,10 @@ export function DiagramEditorPage() {
 	const lastPresenceSentAtRef = useRef(0);
 	const persistedUpdateSeqRef = useRef(0);
 	const pendingUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set());
+	const pendingQueueRef = useRef<QueuedDiagramUpdate[]>([]);
+	const queueFlushPromiseRef = useRef<Promise<void> | null>(null);
+	const pendingQueueLoadedRef = useRef(false);
+	const reconnectAttemptsRef = useRef(0);
 	const persistedSyncPromiseRef = useRef<Promise<number> | null>(null);
 	const canEditRef = useRef(false);
 	const ownConnectionIdRef = useRef<string | null>(null);
@@ -128,13 +177,19 @@ export function DiagramEditorPage() {
 		() => edges.find((edge) => edge.id === selectedEdgeId) ?? null,
 		[edges, selectedEdgeId],
 	);
+	const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+	const assessment = useMemo(() => analyzeArchitecture(nodes, edges), [edges, nodes]);
+	const documentByteSize = useMemo(() => Y.encodeStateAsUpdate(doc).byteLength, [comments, doc, edges, nodes]);
 	const selectedProtocolValue =
 		edgeLabelDraft ?
 			PROTOCOL_PRESETS.some((protocol) => protocol === edgeLabelDraft) ?
 				edgeLabelDraft
 			:	"custom"
 		:	"";
-	const nodeTypes = useMemo(() => ({ default: DiagramComponentNode, comment: CommentNode }), []);
+	const nodeTypes = useMemo(
+		() => ({ default: DiagramComponentNode, boundary: DiagramBoundaryNode, comment: CommentNode }),
+		[],
+	);
 
 	const sessionQuery = useSession();
 
@@ -165,9 +220,38 @@ export function DiagramEditorPage() {
 		refetchOnWindowFocus: false,
 	});
 
+	const historyQuery = useQuery({
+		queryKey: ["diagram", diagramId, "snapshots"],
+		queryFn: ({ signal }) => crdtApi.listSnapshots(diagramId, signal),
+		enabled: Boolean(diagramId) && diagramQuery.isSuccess,
+		refetchOnWindowFocus: false,
+	});
+
 	const hasEditorStatus = snapshotQuery.isError || updatesQuery.isError || diagramQuery.isError || Boolean(lastError);
 	const snapshotReady = (snapshotQuery.isSuccess || snapshotQuery.isError) && !snapshotQuery.isFetching;
 	const updatesReady = (updatesQuery.isSuccess || updatesQuery.isError) && !updatesQuery.isFetching;
+
+	useEffect(() => {
+		if (!diagramQuery.data) return;
+		setSnapshotVersion((current) => Math.max(current, diagramQuery.data.snapshotVersion ?? 1));
+		setLastUpdateSeq((current) => Math.max(current, diagramQuery.data.lastUpdateSeq ?? 0));
+	}, [diagramQuery.data]);
+
+	useEffect(() => {
+		const updateUndoState = () => {
+			setCanUndo(undoManager.undoStack.length > 0);
+			setCanRedo(undoManager.redoStack.length > 0);
+		};
+		undoManager.on("stack-item-added", updateUndoState);
+		undoManager.on("stack-item-popped", updateUndoState);
+		undoManager.on("stack-cleared", updateUndoState);
+		updateUndoState();
+		return () => {
+			undoManager.off("stack-item-added", updateUndoState);
+			undoManager.off("stack-item-popped", updateUndoState);
+			undoManager.off("stack-cleared", updateUndoState);
+		};
+	}, [undoManager]);
 
 	const isCompactedSequenceError = useCallback((error: unknown) => {
 		return error instanceof ApiError && error.status === 409 && error.message.includes("compacted snapshot");
@@ -192,6 +276,8 @@ export function DiagramEditorPage() {
 			}
 
 			persistedUpdateSeqRef.current = Math.max(persistedUpdateSeqRef.current, latestAppliedSeq);
+			setLastUpdateSeq(persistedUpdateSeqRef.current);
+			setLastSyncedAt(new Date().toISOString());
 			return persistedUpdateSeqRef.current;
 		},
 		[doc],
@@ -235,13 +321,89 @@ export function DiagramEditorPage() {
 		}
 	}, [applyPersistedUpdates, diagramId, doc, isCompactedSequenceError]);
 
+	const flushPendingQueue = useCallback(() => {
+		if (queueFlushPromiseRef.current) {
+			return queueFlushPromiseRef.current;
+		}
+
+		const flushPromise = (async () => {
+			if (!diagramId || !navigator.onLine) return;
+			const queue = pendingQueueRef.current;
+
+			while (queue.length > 0 && navigator.onLine) {
+				const queuedUpdate = queue[0];
+				const ack = await crdtApi.postUpdate(
+					diagramId,
+					queuedUpdate.bytes,
+					queuedUpdate.updateId,
+					clientIdRef.current,
+				);
+
+				if (pendingQueueRef.current === queue && !queuedUpdate.broadcasted && websocketRef.current?.readyState === WebSocket.OPEN) {
+					websocketRef.current.send(toArrayBuffer(queuedUpdate.bytes));
+				}
+
+				const previousSeq = persistedUpdateSeqRef.current;
+				queue.shift();
+				writePendingQueue(diagramId, queue);
+				if (pendingQueueRef.current !== queue) return;
+				setPendingUpdateCount(queue.length);
+				if (ack.seq > previousSeq + 1) {
+					await syncPersistedUpdates();
+				} else {
+					persistedUpdateSeqRef.current = Math.max(persistedUpdateSeqRef.current, ack.seq);
+					setLastUpdateSeq(persistedUpdateSeqRef.current);
+					setLastSyncedAt(new Date().toISOString());
+				}
+			}
+		})()
+			.catch((error: unknown) => {
+				setLastError(
+					navigator.onLine ? getErrorMessage(error) : "Offline changes are safe on this device and will sync automatically.",
+				);
+				setSyncState(navigator.onLine ? "error" : "offline");
+				throw error;
+			})
+			.finally(() => {
+				queueFlushPromiseRef.current = null;
+			});
+
+		queueFlushPromiseRef.current = flushPromise;
+		return flushPromise;
+	}, [diagramId, syncPersistedUpdates]);
+
+	const enqueuePendingUpdate = useCallback(
+		(update: Uint8Array) => {
+			const copiedBytes = new Uint8Array(update.byteLength);
+			copiedBytes.set(update);
+			let broadcasted = false;
+			if (websocketRef.current?.readyState === WebSocket.OPEN) {
+				try {
+					websocketRef.current.send(toArrayBuffer(copiedBytes));
+					broadcasted = true;
+				} catch {
+					broadcasted = false;
+				}
+			}
+			pendingQueueRef.current.push({ updateId: crypto.randomUUID(), bytes: copiedBytes, broadcasted });
+			writePendingQueue(diagramId, pendingQueueRef.current);
+			setPendingUpdateCount(pendingQueueRef.current.length);
+			void flushPendingQueue().catch(() => undefined);
+		},
+		[diagramId, flushPendingQueue],
+	);
+
 	const waitForPendingUpdates = useCallback(async () => {
+		await flushPendingQueue().catch(() => undefined);
 		const pendingUpdates = Array.from(pendingUpdatePromisesRef.current);
 
 		if (pendingUpdates.length > 0) {
 			await Promise.allSettled(pendingUpdates);
 		}
-	}, []);
+		if (pendingQueueRef.current.length > 0) {
+			throw new Error("Pending offline changes must sync before a durable snapshot can be created.");
+		}
+	}, [flushPendingQueue]);
 
 	const sendPresenceUpdate = useCallback((cursor: PresenceCursorDto | null, force = false) => {
 		const websocket = websocketRef.current;
@@ -296,15 +458,21 @@ export function DiagramEditorPage() {
 	}, [syncPersistedUpdates]);
 
 	const saveSnapshot = useMutation({
-		mutationFn: async () => {
+		mutationFn: async (intent: SnapshotIntent) => {
 			await waitForPendingUpdates();
 			const baseUpdateSeq = await syncPersistedUpdates();
 			const snapshotBytes = Y.encodeStateAsUpdate(doc);
 
-			return crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current);
+			return crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current, intent);
 		},
 		onMutate: () => setSyncState("saving"),
-		onSuccess: () => setSyncState(websocketRef.current?.readyState === WebSocket.OPEN ? "live" : "offline"),
+		onSuccess: (result) => {
+			setSnapshotVersion(result.snapshotVersion);
+			setLastUpdateSeq(result.lastUpdateSeq);
+			setLastSyncedAt(result.savedAt ?? new Date().toISOString());
+			setSyncState(websocketRef.current?.readyState === WebSocket.OPEN ? "live" : "offline");
+			void queryClient.invalidateQueries({ queryKey: ["diagram", diagramId, "snapshots"] });
+		},
 		onError: (error) => {
 			setLastError(getErrorMessage(error));
 			setSyncState("error");
@@ -338,13 +506,62 @@ export function DiagramEditorPage() {
 		syncCommentsFromSharedMap();
 	}, [syncCommentsFromSharedMap, syncEdgesFromSharedMap, syncNodesFromSharedMap]);
 
+	const restoreSnapshot = useMutation({
+		mutationFn: async (snapshot: DiagramSnapshotDto) => {
+			const snapshotBytes = await crdtApi.getSnapshotVersion(diagramId, snapshot.snapshotVersion);
+			const restoredDoc = new Y.Doc();
+			Y.applyUpdate(restoredDoc, snapshotBytes, INIT_ORIGIN);
+			const restoredNodes = restoredDoc.getMap<StoredNode>("nodes");
+			const restoredEdges = restoredDoc.getMap<StoredEdge>("edges");
+			const restoredComments = restoredDoc.getMap<StoredComment>("comments");
+			const restoredDocs = restoredDoc.getMap("docs");
+
+			doc.transact(() => {
+				for (const key of Array.from(maps.nodes.keys())) maps.nodes.delete(key);
+				for (const key of Array.from(maps.edges.keys())) maps.edges.delete(key);
+				for (const key of Array.from(maps.comments.keys())) maps.comments.delete(key);
+				for (const key of Array.from(maps.docs.keys())) maps.docs.delete(key);
+				restoredNodes.forEach((value, key) => maps.nodes.set(key, value));
+				restoredEdges.forEach((value, key) => maps.edges.set(key, value));
+				restoredComments.forEach((value, key) => maps.comments.set(key, value));
+				restoredDocs.forEach((value, key) => maps.docs.set(key, value));
+			}, LOCAL_ORIGIN);
+
+			restoredDoc.destroy();
+			syncFromSharedMaps();
+			setSelectedNodeId(null);
+			setSelectedEdgeId(null);
+			setSelectedNodeIds([]);
+			return saveSnapshot.mutateAsync({
+				name: `Restored from v${snapshot.snapshotVersion}`,
+				reason: "restore",
+			});
+		},
+		onMutate: (snapshot) => {
+			if (snapshotTimerRef.current) {
+				window.clearTimeout(snapshotTimerRef.current);
+				snapshotTimerRef.current = null;
+			}
+			setRestoringVersion(snapshot.snapshotVersion);
+			setLastError(null);
+		},
+		onError: (error) => {
+			setLastError(getErrorMessage(error));
+			setSyncState("error");
+		},
+		onSettled: () => setRestoringVersion(null),
+	});
+
 	const scheduleSnapshotSave = useCallback(() => {
 		if (snapshotTimerRef.current) {
 			window.clearTimeout(snapshotTimerRef.current);
 		}
 
 		snapshotTimerRef.current = window.setTimeout(() => {
-			saveSnapshot.mutate();
+			snapshotTimerRef.current = null;
+			if (navigator.onLine) {
+				saveSnapshot.mutate({ reason: "automatic" });
+			}
 		}, 1400);
 	}, [saveSnapshot]);
 
@@ -392,9 +609,20 @@ export function DiagramEditorPage() {
 	useEffect(() => {
 		snapshotAppliedRef.current = false;
 		initialUpdatesAppliedRef.current = false;
+		pendingQueueLoadedRef.current = false;
 		persistedUpdateSeqRef.current = 0;
+		pendingQueueRef.current = [];
+		setPendingUpdateCount(0);
+		setLastUpdateSeq(0);
+		setSnapshotVersion(1);
+		setLastSyncedAt(null);
+		setRoundTripMs(null);
+		reconnectAttemptsRef.current = 0;
+		setReconnectAttempt(0);
+		setSelectedNodeIds([]);
+		undoManager.clear();
 		setInitializedDiagramId(null);
-	}, [diagramId]);
+	}, [diagramId, undoManager]);
 
 	useEffect(() => {
 		if (snapshotAppliedRef.current || !snapshotReady) {
@@ -425,11 +653,21 @@ export function DiagramEditorPage() {
 			}
 		}
 
+		if (!pendingQueueLoadedRef.current && canEdit) {
+			pendingQueueLoadedRef.current = true;
+			pendingQueueRef.current = readPendingQueue(diagramId);
+			setPendingUpdateCount(pendingQueueRef.current.length);
+			for (const queuedUpdate of pendingQueueRef.current) {
+				Y.applyUpdate(doc, queuedUpdate.bytes, INIT_ORIGIN);
+			}
+		}
+
 		persistedUpdateSeqRef.current = Math.max(
 			persistedUpdateSeqRef.current,
 			updatesQuery.data?.snapshotBaseUpdateSeq ?? 0,
 			updatesQuery.data?.lastUpdateSeq ?? 0,
 		);
+		setLastUpdateSeq(persistedUpdateSeqRef.current);
 
 		if (canEdit && maps.nodes.size === 0) {
 			doc.transact(() => {
@@ -445,7 +683,10 @@ export function DiagramEditorPage() {
 
 		syncFromSharedMaps();
 		setInitializedDiagramId(diagramId);
-		setSyncState("live");
+		setSyncState(navigator.onLine ? "live" : "offline");
+		if (pendingQueueRef.current.length > 0) {
+			void flushPendingQueue().catch(() => undefined);
+		}
 
 		if ((updatesQuery.data?.items.length ?? 0) >= INITIAL_UPDATE_COMPACTION_THRESHOLD) {
 			scheduleSnapshotSave();
@@ -455,6 +696,7 @@ export function DiagramEditorPage() {
 		diagramId,
 		diagramQuery.isSuccess,
 		doc,
+		flushPendingQueue,
 		maps.edges,
 		maps.nodes,
 		snapshotReady,
@@ -481,34 +723,7 @@ export function DiagramEditorPage() {
 				return;
 			}
 
-			const updateBuffer = toArrayBuffer(update);
-			const persistUpdatePromise = crdtApi
-				.postUpdate(diagramId, update, crypto.randomUUID(), clientIdRef.current)
-				.then((ack) => {
-					if (websocketRef.current?.readyState === WebSocket.OPEN) {
-						websocketRef.current.send(updateBuffer);
-					}
-
-					if (ack.seq <= persistedUpdateSeqRef.current + 1) {
-						persistedUpdateSeqRef.current = Math.max(persistedUpdateSeqRef.current, ack.seq);
-						return;
-					}
-
-					void syncPersistedUpdates().catch((error: unknown) => {
-						setLastError(getErrorMessage(error));
-						setSyncState("error");
-					});
-				})
-				.catch((error: unknown) => {
-					setLastError(getErrorMessage(error));
-					setSyncState("error");
-				});
-
-			pendingUpdatePromisesRef.current.add(persistUpdatePromise);
-			void persistUpdatePromise.finally(() => {
-				pendingUpdatePromisesRef.current.delete(persistUpdatePromise);
-			});
-
+			enqueuePendingUpdate(update);
 			scheduleSnapshotSave();
 		};
 
@@ -517,11 +732,19 @@ export function DiagramEditorPage() {
 		return () => {
 			doc.off("update", handleUpdate);
 		};
-	}, [diagramId, doc, scheduleSnapshotSave, syncPersistedUpdates]);
+	}, [doc, enqueuePendingUpdate, scheduleSnapshotSave]);
 
 	useEffect(() => {
 		if (!diagramId || !initialSyncReady) {
 			return;
+		}
+		if (!navigator.onLine) {
+			setSyncState("offline");
+			return;
+		}
+		if (reconnectTimerRef.current) {
+			window.clearTimeout(reconnectTimerRef.current);
+			reconnectTimerRef.current = null;
 		}
 
 		let isCurrent = true;
@@ -551,11 +774,27 @@ export function DiagramEditorPage() {
 
 			setSyncState("live");
 			setLastError(null);
+			reconnectAttemptsRef.current = 0;
+			setReconnectAttempt(0);
 			sendPresenceUpdate(null, true);
-			void syncPersistedUpdates().catch((error: unknown) => {
-				setLastError(getErrorMessage(error));
-				setSyncState("error");
-			});
+			const sendPing = () => {
+				if (websocket.readyState !== WebSocket.OPEN) return;
+				pingSentAtRef.current = performance.now();
+				websocket.send(JSON.stringify({ type: "ping" }));
+			};
+			sendPing();
+			pingTimerRef.current = window.setInterval(sendPing, 15_000);
+			void flushPendingQueue()
+				.then(syncPersistedUpdates)
+				.then(() => {
+					if (canEditRef.current && websocket.readyState === WebSocket.OPEN) {
+						websocket.send(toArrayBuffer(Y.encodeStateAsUpdate(doc)));
+					}
+				})
+				.catch((error: unknown) => {
+					setLastError(getErrorMessage(error));
+					setSyncState(navigator.onLine ? "error" : "offline");
+				});
 		});
 
 		websocket.addEventListener("message", (event) => {
@@ -579,6 +818,14 @@ export function DiagramEditorPage() {
 				if (frame.type === "error") {
 					setLastError(frame.message ?? "Realtime service returned an error.");
 					setSyncState("error");
+					return;
+				}
+
+				if (frame.type === "pong") {
+					if (pingSentAtRef.current !== null) {
+						setRoundTripMs(Math.max(0, Math.round(performance.now() - pingSentAtRef.current)));
+						pingSentAtRef.current = null;
+					}
 					return;
 				}
 
@@ -621,6 +868,21 @@ export function DiagramEditorPage() {
 			}
 
 			setSyncState("offline");
+			setOwnConnectionId(null);
+			if (pingTimerRef.current) {
+				window.clearInterval(pingTimerRef.current);
+				pingTimerRef.current = null;
+			}
+			if (navigator.onLine) {
+				const attempt = reconnectAttemptsRef.current + 1;
+				reconnectAttemptsRef.current = attempt;
+				setReconnectAttempt(attempt);
+				const delay = Math.min(15_000, 750 * 2 ** Math.min(attempt - 1, 5));
+				reconnectTimerRef.current = window.setTimeout(() => {
+					reconnectTimerRef.current = null;
+					setWebsocketGeneration((current) => current + 1);
+				}, delay);
+			}
 		});
 
 		websocket.addEventListener("error", () => {
@@ -635,12 +897,43 @@ export function DiagramEditorPage() {
 		return () => {
 			isCurrent = false;
 			sendPresenceUpdate(null, true);
+			if (pingTimerRef.current) {
+				window.clearInterval(pingTimerRef.current);
+				pingTimerRef.current = null;
+			}
 			websocket.close();
 			if (websocketRef.current === websocket) {
 				websocketRef.current = null;
 			}
 		};
-	}, [diagramId, doc, initialSyncReady, schedulePersistedSync, sendPresenceUpdate, syncPersistedUpdates]);
+	}, [
+		diagramId,
+		doc,
+		flushPendingQueue,
+		initialSyncReady,
+		schedulePersistedSync,
+		sendPresenceUpdate,
+		syncPersistedUpdates,
+		websocketGeneration,
+	]);
+
+	useEffect(() => {
+		const handleOnline = () => {
+			setLastError(null);
+			setWebsocketGeneration((current) => current + 1);
+			void flushPendingQueue().catch(() => undefined);
+		};
+		const handleOffline = () => {
+			setSyncState("offline");
+			websocketRef.current?.close();
+		};
+		window.addEventListener("online", handleOnline);
+		window.addEventListener("offline", handleOffline);
+		return () => {
+			window.removeEventListener("online", handleOnline);
+			window.removeEventListener("offline", handleOffline);
+		};
+	}, [flushPendingQueue]);
 
 	useEffect(() => {
 		return () => {
@@ -651,8 +944,23 @@ export function DiagramEditorPage() {
 			if (persistedSyncTimerRef.current) {
 				window.clearTimeout(persistedSyncTimerRef.current);
 			}
+
+			if (reconnectTimerRef.current) {
+				window.clearTimeout(reconnectTimerRef.current);
+			}
+
+			if (pingTimerRef.current) {
+				window.clearInterval(pingTimerRef.current);
+			}
 		};
 	}, []);
+
+	useEffect(() => {
+		return () => {
+			undoManager.destroy();
+			doc.destroy();
+		};
+	}, [doc, undoManager]);
 
 	const onNodesChange = useCallback(
 		(changes: NodeChange<DiagramNode>[]) => {
@@ -716,6 +1024,9 @@ export function DiagramEditorPage() {
 					setEdges(nextEdges);
 					setSelectedNodeId((currentNodeId) =>
 						currentNodeId && removedNodeIds.has(currentNodeId) ? null : currentNodeId,
+					);
+					setSelectedNodeIds((currentNodeIds) =>
+						currentNodeIds.filter((currentNodeId) => !removedNodeIds.has(currentNodeId)),
 					);
 					setSelectedEdgeId((currentEdgeId) =>
 						currentEdgeId && removedEdgeIds.has(currentEdgeId) ? null : currentEdgeId,
@@ -899,6 +1210,7 @@ export function DiagramEditorPage() {
 				maps.edges.set(edge.id, toStoredEdge(edge));
 			}, LOCAL_ORIGIN);
 			setSelectedNodeId(null);
+			setSelectedNodeIds([]);
 			setSelectedEdgeId(edge.id);
 		},
 		[doc, maps.edges],
@@ -949,7 +1261,10 @@ export function DiagramEditorPage() {
 			position: { x: 180 + nodeCount * 28, y: 120 + nodeCount * 22 },
 			data: { label: `Component ${nodeCount + 1}`, kind: "component" },
 		};
-		const nextNodes = [...nodesRef.current, toFlowNode(node)];
+		const nextNodes = [
+			...nodesRef.current.map((currentNode) => ({ ...currentNode, selected: false })),
+			{ ...toFlowNode(node), selected: true },
+		];
 
 		nodesRef.current = nextNodes;
 		setNodes(nextNodes);
@@ -958,20 +1273,117 @@ export function DiagramEditorPage() {
 			maps.nodes.set(node.id, node);
 		}, LOCAL_ORIGIN);
 		setSelectedNodeId(node.id);
+		setSelectedNodeIds([node.id]);
+		setSelectedEdgeId(null);
+	}
+
+	function getCanvasCenter() {
+		const reactFlowInstance = reactFlowInstanceRef.current;
+		const canvasBounds = canvasFrameRef.current?.getBoundingClientRect();
+		if (!reactFlowInstance || !canvasBounds) return null;
+		return reactFlowInstance.screenToFlowPosition({
+			x: canvasBounds.left + canvasBounds.width / 2,
+			y: canvasBounds.top + canvasBounds.height / 2,
+		});
+	}
+
+	function addBoundary() {
+		const center = getCanvasCenter() ?? { x: 380, y: 260 };
+		const boundary: StoredNode = {
+			id: `boundary-${crypto.randomUUID()}`,
+			type: "boundary",
+			position: { x: center.x - 220, y: center.y - 140 },
+			data: { label: "System boundary", kind: "boundary" },
+		};
+		const nextNodes = [
+			{ ...toFlowNode(boundary), selected: true },
+			...nodesRef.current.map((currentNode) => ({ ...currentNode, selected: false })),
+		];
+		nodesRef.current = nextNodes;
+		setNodes(nextNodes);
+		doc.transact(() => maps.nodes.set(boundary.id, boundary), LOCAL_ORIGIN);
+		setSelectedNodeId(boundary.id);
+		setSelectedNodeIds([boundary.id]);
+		setSelectedEdgeId(null);
+	}
+
+	function persistNodeBatch(nextNodes: DiagramNode[], changedNodeIds: Set<string>) {
+		nodesRef.current = nextNodes;
+		setNodes(nextNodes);
+		doc.transact(() => {
+			for (const node of nextNodes) {
+				if (changedNodeIds.has(node.id)) maps.nodes.set(node.id, toStoredNode(node));
+			}
+		}, LOCAL_ORIGIN);
+	}
+
+	function duplicateSelection() {
+		const selected = nodesRef.current.filter((node) => selectedNodeIdSet.has(node.id));
+		if (!selected.length) return;
+		const idMap = new Map(selected.map((node) => [node.id, `${node.type === "boundary" ? "boundary" : "node"}-${crypto.randomUUID()}`]));
+		const duplicates = selected.map((node) => ({
+			...node,
+			id: idMap.get(node.id) as string,
+			position: { x: node.position.x + 36, y: node.position.y + 36 },
+			selected: true,
+			data: { ...node.data, label: `${node.data.label} copy` },
+		}));
+		const duplicateEdges = edgesRef.current
+			.filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+			.map((edge) => ({
+				...edge,
+				id: `edge-${crypto.randomUUID()}`,
+				source: idMap.get(edge.source) as string,
+				target: idMap.get(edge.target) as string,
+				selected: false,
+			}));
+		const nextNodes = [...nodesRef.current.map((node) => ({ ...node, selected: false })), ...duplicates];
+		const nextEdges = [...edgesRef.current.map((edge) => ({ ...edge, selected: false })), ...duplicateEdges];
+		nodesRef.current = nextNodes;
+		edgesRef.current = nextEdges;
+		setNodes(nextNodes);
+		setEdges(nextEdges);
+		doc.transact(() => {
+			for (const node of duplicates) maps.nodes.set(node.id, toStoredNode(node));
+			for (const edge of duplicateEdges) maps.edges.set(edge.id, toStoredEdge(edge));
+		}, LOCAL_ORIGIN);
+		const duplicateIds = duplicates.map((node) => node.id);
+		setSelectedNodeIds(duplicateIds);
+		setSelectedNodeId(duplicateIds[0] ?? null);
+		setSelectedEdgeId(null);
+	}
+
+	function alignSelection(axis: AlignmentAxis) {
+		const nextNodes = alignDiagramNodes(nodesRef.current, selectedNodeIdSet, axis);
+		persistNodeBatch(nextNodes, selectedNodeIdSet);
+	}
+
+	function autoLayout(direction: LayoutDirection) {
+		const nextNodes = autoLayoutDiagram(nodesRef.current, edgesRef.current, direction);
+		persistNodeBatch(nextNodes, new Set(nextNodes.filter((node) => node.type !== "boundary").map((node) => node.id)));
+		window.setTimeout(() => reactFlowInstanceRef.current?.fitView({ padding: 0.22, duration: 420 }), 0);
+	}
+
+	function focusInsight(insight: ArchitectureInsight) {
+		const nodeIds = new Set(insight.nodeIds);
+		const edgeIds = new Set(insight.edgeIds);
+		const nextNodes = nodesRef.current.map((node) => ({ ...node, selected: nodeIds.has(node.id) }));
+		const nextEdges = edgesRef.current.map((edge) => ({ ...edge, selected: edgeIds.has(edge.id) }));
+		nodesRef.current = nextNodes;
+		edgesRef.current = nextEdges;
+		setNodes(nextNodes);
+		setEdges(nextEdges);
+		setSelectedNodeIds([...nodeIds]);
+		setSelectedNodeId(insight.nodeIds[0] ?? null);
+		setSelectedEdgeId(insight.nodeIds.length ? null : insight.edgeIds[0] ?? null);
+		const focusNodes = nextNodes.filter((node) => nodeIds.has(node.id));
+		if (focusNodes.length) {
+			window.setTimeout(() => reactFlowInstanceRef.current?.fitView({ nodes: focusNodes, padding: 0.5, duration: 420 }), 0);
+		}
 	}
 
 	function getCommentStartPosition() {
-		const reactFlowInstance = reactFlowInstanceRef.current;
-		const canvasBounds = canvasFrameRef.current?.getBoundingClientRect();
-
-		if (reactFlowInstance && canvasBounds) {
-			return reactFlowInstance.screenToFlowPosition({
-				x: canvasBounds.left + canvasBounds.width / 2,
-				y: canvasBounds.top + canvasBounds.height / 2,
-			});
-		}
-
-		return getFallbackCommentPosition(commentsRef.current.length);
+		return getCanvasCenter() ?? getFallbackCommentPosition(commentsRef.current.length);
 	}
 
 	function addComment(position = getCommentStartPosition()) {
@@ -993,6 +1405,8 @@ export function DiagramEditorPage() {
 		setComments(nextComments);
 		setFocusedCommentId(comment.id);
 		setSelectedNodeId(null);
+		setSelectedNodeIds([]);
+		setSelectedEdgeId(null);
 
 		doc.transact(() => {
 			maps.comments.set(comment.id, comment);
@@ -1047,6 +1461,7 @@ export function DiagramEditorPage() {
 		setNodes(nextNodes);
 		setEdges(nextEdges);
 		setSelectedNodeId((currentNodeId) => (currentNodeId === nodeId ? null : currentNodeId));
+		setSelectedNodeIds((currentNodeIds) => currentNodeIds.filter((currentNodeId) => currentNodeId !== nodeId));
 		setSelectedEdgeId((currentEdgeId) =>
 			currentEdgeId && removedEdgeIds.has(currentEdgeId) ? null : currentEdgeId,
 		);
@@ -1237,6 +1652,53 @@ export function DiagramEditorPage() {
 		[doc, maps.comments],
 	);
 
+	async function handleExport(format: "json" | "svg" | "png" | "pdf") {
+		try {
+			setLastError(null);
+			await exportDiagram(
+				createDiagramDocument(
+					diagramQuery.data?.title ?? "System design",
+					nodesRef.current,
+					edgesRef.current,
+					commentsRef.current,
+				),
+				format,
+			);
+		} catch (error) {
+			setLastError(getErrorMessage(error));
+		}
+	}
+
+	async function handleImport(file: File) {
+		if (!canEdit) return;
+		try {
+			if (snapshotTimerRef.current) {
+				window.clearTimeout(snapshotTimerRef.current);
+				snapshotTimerRef.current = null;
+			}
+			setLastError(null);
+			const imported = parseDiagramDocument(await file.text());
+			doc.transact(() => {
+				for (const key of Array.from(maps.nodes.keys())) maps.nodes.delete(key);
+				for (const key of Array.from(maps.edges.keys())) maps.edges.delete(key);
+				for (const key of Array.from(maps.comments.keys())) maps.comments.delete(key);
+				for (const key of Array.from(maps.docs.keys())) maps.docs.delete(key);
+				for (const node of imported.diagram.nodes) maps.nodes.set(node.id, node);
+				for (const edge of imported.diagram.edges) maps.edges.set(edge.id, edge);
+				for (const comment of imported.diagram.comments) maps.comments.set(comment.id, comment);
+			}, LOCAL_ORIGIN);
+			syncFromSharedMaps();
+			setSelectedNodeId(null);
+			setSelectedNodeIds([]);
+			setSelectedEdgeId(null);
+			await saveSnapshot.mutateAsync({ name: `Imported ${file.name}`, reason: "import" });
+			window.setTimeout(() => reactFlowInstanceRef.current?.fitView({ padding: 0.22, duration: 420 }), 0);
+		} catch (error) {
+			setLastError(getErrorMessage(error));
+			setSyncState(navigator.onLine ? "error" : "offline");
+		}
+	}
+
 	const flowNodes = useMemo(() => {
 		const previousCommentNodes = commentNodeCacheRef.current;
 		const nextCommentNodes = new Map<string, DiagramNode>();
@@ -1346,6 +1808,26 @@ export function DiagramEditorPage() {
 		}
 	}
 
+	useEffect(() => {
+		const handleKeyboardShortcut = (event: KeyboardEvent) => {
+			if (readOnly || (!event.ctrlKey && !event.metaKey)) return;
+			const target = event.target as HTMLElement | null;
+			if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+			if (event.key.toLowerCase() === "z") {
+				event.preventDefault();
+				if (event.shiftKey) undoManager.redo();
+				else undoManager.undo();
+				return;
+			}
+			if (event.key.toLowerCase() === "y") {
+				event.preventDefault();
+				undoManager.redo();
+			}
+		};
+		window.addEventListener("keydown", handleKeyboardShortcut);
+		return () => window.removeEventListener("keydown", handleKeyboardShortcut);
+	}, [readOnly, undoManager]);
+
 	return (
 		<div className={classNames(styles.page, hasEditorStatus && styles.withStatus)}>
 			{hasEditorStatus ?
@@ -1379,8 +1861,10 @@ export function DiagramEditorPage() {
 					onConnect={onConnect}
 					onReconnect={onReconnect}
 					onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
-						const selectedDiagramNode = selectedNodes.find((node) => !isCommentNodeId(node.id));
+						const selectedDiagramNodes = selectedNodes.filter((node) => !isCommentNodeId(node.id));
+						const selectedDiagramNode = selectedDiagramNodes[0];
 						const selectedDiagramEdge = selectedEdges[0];
+						setSelectedNodeIds(selectedDiagramNodes.map((node) => node.id));
 
 						if (selectedDiagramNode) {
 							setSelectedNodeId(selectedDiagramNode.id);
@@ -1427,9 +1911,24 @@ export function DiagramEditorPage() {
 					syncState={syncState}
 					activeUserCount={editorUsers.length}
 					nodeCount={nodes.length}
+					edgeCount={edges.length}
 					commentCount={comments.length}
+					selectedNodeCount={selectedNodeIds.length}
+					pendingUpdateCount={pendingUpdateCount}
+					snapshotVersion={snapshotVersion}
+					lastUpdateSeq={lastUpdateSeq}
+					documentByteSize={documentByteSize}
+					roundTripMs={roundTripMs}
+					reconnectAttempt={reconnectAttempt}
+					lastSyncedAt={lastSyncedAt}
 					isSavingSnapshot={saveSnapshot.isPending}
 					readOnly={readOnly}
+					canUndo={canUndo}
+					canRedo={canRedo}
+					assessment={assessment}
+					historyItems={historyQuery.data ?? []}
+					isHistoryLoading={historyQuery.isLoading}
+					restoringVersion={restoringVersion}
 					selectedNode={selectedNode}
 					nodeLabelDraft={nodeLabelDraft}
 					selectedEdge={selectedEdge}
@@ -1438,8 +1937,24 @@ export function DiagramEditorPage() {
 					onCollapse={() => setIsSidePanelCollapsed(true)}
 					onExpand={() => setIsSidePanelCollapsed(false)}
 					onAddNode={addNode}
+					onAddBoundary={addBoundary}
 					onAddComment={() => addComment()}
-					onSaveSnapshot={() => saveSnapshot.mutate()}
+					onSaveSnapshot={(name) => {
+						if (snapshotTimerRef.current) {
+							window.clearTimeout(snapshotTimerRef.current);
+							snapshotTimerRef.current = null;
+						}
+						saveSnapshot.mutate({ name, reason: "manual" });
+					}}
+					onUndo={() => undoManager.undo()}
+					onRedo={() => undoManager.redo()}
+					onDuplicateSelection={duplicateSelection}
+					onAlignSelection={alignSelection}
+					onAutoLayout={autoLayout}
+					onFocusInsight={focusInsight}
+					onRestoreSnapshot={(snapshot) => restoreSnapshot.mutate(snapshot)}
+					onExport={(format) => void handleExport(format)}
+					onImport={(file) => void handleImport(file)}
 					onRenameNode={handleRenameNode}
 					onNodeLabelDraftChange={setNodeLabelDraft}
 					onNodeLabelBlur={handleNodeLabelBlur}

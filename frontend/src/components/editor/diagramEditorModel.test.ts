@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DIAGRAM_EDGE_TYPE, normalizeHandleId, toFlowEdge, toStoredEdge } from "./diagramEditorModel";
+import { DIAGRAM_EDGE_TYPE, normalizeHandleId, snapNodePosition, toFlowEdge, toStoredEdge, type DiagramNode } from "./diagramEditorModel";
 
 describe("diagram edge routing", () => {
 	it("restores rounded orthogonal routing for saved edges", () => {
@@ -29,5 +29,14 @@ describe("diagram edge routing", () => {
 		expect(normalizeHandleId("top-source")).toBe("top");
 		expect(normalizeHandleId("right-target")).toBe("right");
 		expect(normalizeHandleId("bottom")).toBe("bottom");
+	});
+
+	it("does not snap components to visual boundary coordinates", () => {
+		const nodes: DiagramNode[] = [
+			{ id: "boundary", type: "boundary", position: { x: 100, y: 100 }, data: { label: "Zone", kind: "boundary" } },
+			{ id: "service", type: "default", position: { x: 112, y: 113 }, data: { label: "API", kind: "service" } },
+		];
+		expect(snapNodePosition("service", { x: 108, y: 109 }, nodes)).toEqual({ x: 108, y: 109 });
+		expect(snapNodePosition("boundary", { x: 115, y: 116 }, nodes)).toEqual({ x: 115, y: 116 });
 	});
 });

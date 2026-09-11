@@ -125,6 +125,19 @@ type DiagramUpdate struct {
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
+type DiagramSnapshot struct {
+	DiagramID       uuid.UUID `json:"diagramId"`
+	SnapshotVersion int64     `json:"snapshotVersion"`
+	BaseUpdateSeq   int64     `json:"baseUpdateSeq"`
+	SnapshotBytes   []byte    `json:"-"`
+	ByteSize        int64     `json:"byteSize"`
+	Name            *string   `json:"name"`
+	Reason          string    `json:"reason"`
+	CreatedBy       uuid.UUID `json:"createdBy"`
+	AuthorName      string    `json:"authorName"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
 type DiagramAccess struct {
 	Allowed     bool      `json:"allowed"`
 	Role        Role      `json:"role"`

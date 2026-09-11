@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (repository *Repository) ListDiagrams(ctx context.Context, projectID uuid.UUID, limit int, cursor string) ([]domain.Diagram, string, error) {
@@ -39,7 +40,13 @@ func (repository *Repository) ListDiagrams(ctx context.Context, projectID uuid.U
 
 func (repository *Repository) CreateDiagram(ctx context.Context, projectID uuid.UUID, actorUserID uuid.UUID, title string, snapshotBytes []byte) (domain.Diagram, error) {
 	diagramID := uuid.New()
-	row := repository.pool.QueryRow(ctx, `
+	transaction, beginErr := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if beginErr != nil {
+		return domain.Diagram{}, mapPostgresError(beginErr)
+	}
+	defer rollbackUnlessCommitted(ctx, transaction)
+
+	row := transaction.QueryRow(ctx, `
 		insert into diagrams (id, project_id, title, snapshot_bytes, created_by)
 		values ($1, $2, $3, $4, $5)
 		returning id, project_id, title, thumbnail_url, snapshot_bytes, snapshot_version, snapshot_base_update_seq, last_update_seq, created_by, created_at, updated_at
@@ -47,6 +54,16 @@ func (repository *Repository) CreateDiagram(ctx context.Context, projectID uuid.
 	diagram, scanErr := scanDiagram(row)
 	if scanErr != nil {
 		return domain.Diagram{}, mapPostgresError(scanErr)
+	}
+	if _, insertErr := transaction.Exec(ctx, `
+		insert into diagram_snapshots (
+			diagram_id, snapshot_version, base_update_seq, snapshot_bytes, snapshot_name, reason, created_by
+		) values ($1, $2, $3, $4, $5, 'initial', $6)
+	`, diagram.ID, diagram.SnapshotVersion, diagram.SnapshotBaseUpdateSeq, diagram.SnapshotBytes, "Initial state", actorUserID); insertErr != nil {
+		return domain.Diagram{}, mapPostgresError(insertErr)
+	}
+	if commitErr := transaction.Commit(ctx); commitErr != nil {
+		return domain.Diagram{}, mapPostgresError(commitErr)
 	}
 	return diagram, nil
 }
@@ -89,7 +106,7 @@ func (repository *Repository) DeleteDiagram(ctx context.Context, diagramID uuid.
 	return nil
 }
 
-func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID uuid.UUID, snapshotBytes []byte, baseUpdateSeq int64) (domain.Diagram, error) {
+func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID uuid.UUID, snapshotBytes []byte, baseUpdateSeq int64, actorUserID uuid.UUID, name string, reason string) (domain.Diagram, error) {
 	transaction, beginErr := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if beginErr != nil {
 		return domain.Diagram{}, mapPostgresError(beginErr)
@@ -120,6 +137,33 @@ func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID
 		}
 		return domain.Diagram{}, mapPostgresError(scanErr)
 	}
+	var snapshotName any
+	if name != "" {
+		snapshotName = name
+	}
+	_, historyErr := transaction.Exec(ctx, `
+		insert into diagram_snapshots (
+			diagram_id, snapshot_version, base_update_seq, snapshot_bytes, snapshot_name, reason, created_by
+		) values ($1, $2, $3, $4, $5, $6, $7)
+	`, diagram.ID, diagram.SnapshotVersion, diagram.SnapshotBaseUpdateSeq, diagram.SnapshotBytes, snapshotName, reason, actorUserID)
+	if historyErr != nil {
+		return domain.Diagram{}, mapPostgresError(historyErr)
+	}
+	_, pruneErr := transaction.Exec(ctx, `
+		delete from diagram_snapshots
+		where diagram_id = $1
+			and reason = 'automatic'
+			and snapshot_version not in (
+				select snapshot_version
+				from diagram_snapshots
+				where diagram_id = $1 and reason = 'automatic'
+				order by snapshot_version desc
+				limit 20
+			)
+	`, diagramID)
+	if pruneErr != nil {
+		return domain.Diagram{}, mapPostgresError(pruneErr)
+	}
 	_, deleteErr := transaction.Exec(ctx, `
 		delete from diagram_updates
 		where diagram_id = $1 and seq <= $2
@@ -131,6 +175,79 @@ func (repository *Repository) SaveDiagramSnapshot(ctx context.Context, diagramID
 		return domain.Diagram{}, mapPostgresError(commitErr)
 	}
 	return diagram, nil
+}
+
+func (repository *Repository) ListDiagramSnapshots(ctx context.Context, diagramID uuid.UUID, limit int) ([]domain.DiagramSnapshot, error) {
+	rows, queryErr := repository.pool.Query(ctx, `
+		select ds.diagram_id, ds.snapshot_version, ds.base_update_seq,
+			octet_length(ds.snapshot_bytes), ds.snapshot_name, ds.reason,
+			coalesce(ds.created_by, '00000000-0000-0000-0000-000000000000'::uuid),
+			coalesce(u.display_name, 'Unknown collaborator'), ds.created_at
+		from diagram_snapshots ds
+		left join users u on u.id = ds.created_by
+		where ds.diagram_id = $1
+		order by ds.snapshot_version desc
+		limit $2
+	`, diagramID, limit)
+	if queryErr != nil {
+		return nil, mapPostgresError(queryErr)
+	}
+	defer rows.Close()
+
+	snapshots := make([]domain.DiagramSnapshot, 0)
+	for rows.Next() {
+		var snapshot domain.DiagramSnapshot
+		var snapshotName pgtype.Text
+		if scanErr := rows.Scan(
+			&snapshot.DiagramID,
+			&snapshot.SnapshotVersion,
+			&snapshot.BaseUpdateSeq,
+			&snapshot.ByteSize,
+			&snapshotName,
+			&snapshot.Reason,
+			&snapshot.CreatedBy,
+			&snapshot.AuthorName,
+			&snapshot.CreatedAt,
+		); scanErr != nil {
+			return nil, mapPostgresError(scanErr)
+		}
+		snapshot.Name = textPtr(snapshotName)
+		snapshots = append(snapshots, snapshot)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, mapPostgresError(rowsErr)
+	}
+	return snapshots, nil
+}
+
+func (repository *Repository) GetDiagramSnapshot(ctx context.Context, diagramID uuid.UUID, snapshotVersion int64) (domain.DiagramSnapshot, error) {
+	row := repository.pool.QueryRow(ctx, `
+		select ds.diagram_id, ds.snapshot_version, ds.base_update_seq, ds.snapshot_bytes,
+			octet_length(ds.snapshot_bytes), ds.snapshot_name, ds.reason,
+			coalesce(ds.created_by, '00000000-0000-0000-0000-000000000000'::uuid),
+			coalesce(u.display_name, 'Unknown collaborator'), ds.created_at
+		from diagram_snapshots ds
+		left join users u on u.id = ds.created_by
+		where ds.diagram_id = $1 and ds.snapshot_version = $2
+	`, diagramID, snapshotVersion)
+	var snapshot domain.DiagramSnapshot
+	var snapshotName pgtype.Text
+	if scanErr := row.Scan(
+		&snapshot.DiagramID,
+		&snapshot.SnapshotVersion,
+		&snapshot.BaseUpdateSeq,
+		&snapshot.SnapshotBytes,
+		&snapshot.ByteSize,
+		&snapshotName,
+		&snapshot.Reason,
+		&snapshot.CreatedBy,
+		&snapshot.AuthorName,
+		&snapshot.CreatedAt,
+	); scanErr != nil {
+		return domain.DiagramSnapshot{}, mapPostgresError(scanErr)
+	}
+	snapshot.Name = textPtr(snapshotName)
+	return snapshot, nil
 }
 
 func (repository *Repository) ListDiagramUpdates(ctx context.Context, diagramID uuid.UUID, afterSeq int64) ([]domain.DiagramUpdate, error) {

@@ -1,15 +1,33 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { lazy, Suspense } from "react";
 
 import { AppShell } from "./components/AppShell";
 import { StatusPanel } from "./components/ui";
 import { useSession } from "./hooks/useAuth";
 import { DashboardPage } from "./pages/DashboardPage";
-import { DiagramEditorPage } from "./pages/DiagramEditorPage";
 import { DiagramOverviewPage } from "./pages/DiagramOverviewPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
+
+const DiagramEditorPage = lazy(() =>
+	import("./pages/DiagramEditorPage").then((module) => ({ default: module.DiagramEditorPage })),
+);
+
+function EditorRoute() {
+	return (
+		<Suspense
+			fallback={
+				<div className="screen-center">
+					<StatusPanel>Loading architecture editor…</StatusPanel>
+				</div>
+			}
+		>
+			<DiagramEditorPage />
+		</Suspense>
+	);
+}
 
 function RequireAuth() {
 	const location = useLocation();
@@ -37,7 +55,7 @@ export function App() {
 			<Route element={<RequireAuth />}>
 				<Route
 					path="workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
-					element={<DiagramEditorPage />}
+					element={<EditorRoute />}
 				/>
 				<Route element={<AppShell />}>
 					<Route index element={<DashboardPage />} />

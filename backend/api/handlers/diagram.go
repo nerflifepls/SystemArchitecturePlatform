@@ -15,6 +15,7 @@ import (
 	"backend/domain"
 	"backend/services"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
@@ -66,6 +67,10 @@ type appendUpdateResponse struct {
 	Seq        int64     `json:"seq"`
 	UpdateID   string    `json:"updateId"`
 	AcceptedAt time.Time `json:"acceptedAt"`
+}
+
+type diagramSnapshotsResponse struct {
+	Items []domain.DiagramSnapshot `json:"items"`
 }
 
 func NewDiagramHandler(appConfig config.Config, diagramService *services.DiagramService) DiagramHandler {
@@ -226,12 +231,68 @@ func (handler DiagramHandler) SaveSnapshot(writer http.ResponseWriter, request *
 		response.WriteError(writer, request, readErr)
 		return
 	}
-	result, saveErr := handler.diagrams.SaveSnapshot(request.Context(), auth.User.ID, diagramID, baseUpdateSeq, snapshotBytes)
+	result, saveErr := handler.diagrams.SaveSnapshot(
+		request.Context(),
+		auth.User.ID,
+		diagramID,
+		baseUpdateSeq,
+		snapshotBytes,
+		request.Header.Get("X-Snapshot-Name"),
+		strings.TrimSpace(request.Header.Get("X-Snapshot-Reason")),
+	)
 	if saveErr != nil {
 		response.WriteError(writer, request, saveErr)
 		return
 	}
 	response.WriteJSON(writer, http.StatusOK, result)
+}
+
+func (handler DiagramHandler) ListSnapshots(writer http.ResponseWriter, request *http.Request) {
+	auth, ok := authctx.Current(request.Context())
+	if !ok {
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
+		return
+	}
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
+	if parseErr != nil {
+		response.WriteError(writer, request, parseErr)
+		return
+	}
+	items, listErr := handler.diagrams.ListSnapshots(request.Context(), auth.User.ID, diagramID, apirequest.Limit(request))
+	if listErr != nil {
+		response.WriteError(writer, request, listErr)
+		return
+	}
+	response.WriteJSON(writer, http.StatusOK, diagramSnapshotsResponse{Items: items})
+}
+
+func (handler DiagramHandler) GetSnapshotVersion(writer http.ResponseWriter, request *http.Request) {
+	auth, ok := authctx.Current(request.Context())
+	if !ok {
+		response.WriteError(writer, request, services.Unauthorized("session is required"))
+		return
+	}
+	diagramID, parseErr := apirequest.UUIDParam(request, "diagramId")
+	if parseErr != nil {
+		response.WriteError(writer, request, parseErr)
+		return
+	}
+	snapshotVersion, versionErr := strconv.ParseInt(chi.URLParam(request, "snapshotVersion"), 10, 64)
+	if versionErr != nil || snapshotVersion < 1 {
+		response.WriteError(writer, request, services.BadRequest("snapshotVersion must be a positive integer"))
+		return
+	}
+	snapshot, getErr := handler.diagrams.GetSnapshotVersion(request.Context(), auth.User.ID, diagramID, snapshotVersion)
+	if getErr != nil {
+		response.WriteError(writer, request, getErr)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/octet-stream")
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("X-Snapshot-Version", strconv.FormatInt(snapshot.SnapshotVersion, 10))
+	writer.Header().Set("X-Base-Update-Seq", strconv.FormatInt(snapshot.BaseUpdateSeq, 10))
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(snapshot.SnapshotBytes)
 }
 
 func (handler DiagramHandler) ListUpdates(writer http.ResponseWriter, request *http.Request) {

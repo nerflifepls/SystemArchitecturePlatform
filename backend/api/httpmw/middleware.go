@@ -19,7 +19,7 @@ func CORS(frontendOrigin string) func(http.Handler) http.Handler {
 				writer.Header().Set("Vary", "Origin")
 				writer.Header().Set("Access-Control-Allow-Credentials", "true")
 				writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
-				writer.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Update-Id,X-Client-Id,X-Base-Update-Seq,X-Request-Id")
+				writer.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Update-Id,X-Client-Id,X-Base-Update-Seq,X-Snapshot-Name,X-Snapshot-Reason,X-Request-Id")
 			}
 			if request.Method == http.MethodOptions {
 				writer.WriteHeader(http.StatusNoContent)

@@ -86,6 +86,7 @@ export const NODE_SNAP_DISTANCE = 18;
 export const COMMENT_DEFAULT_SIZE = { width: 246, height: 154 };
 export const COMMENT_MIN_SIZE = { width: 190, height: 128 };
 export const COMMENT_MAX_SIZE = { width: 460, height: 360 };
+export const BOUNDARY_DEFAULT_SIZE = { width: 440, height: 280 };
 export const INITIAL_UPDATE_COMPACTION_THRESHOLD = 40;
 export const NODE_KIND_PRESETS = [
 	"component",
@@ -137,6 +138,7 @@ export function toFlowNode(node: StoredNode): DiagramNode {
 		type: node.type ?? "default",
 		position: node.position,
 		data: node.data,
+		...(node.type === "boundary" ? { style: BOUNDARY_DEFAULT_SIZE, zIndex: -1 } : {}),
 	};
 }
 
@@ -238,13 +240,16 @@ export function commentNodeDataMatches(
 }
 
 export function snapNodePosition(nodeId: string, position: FlowPosition, currentNodes: DiagramNode[]) {
+	if (currentNodes.some((node) => node.id === nodeId && node.type === "boundary")) {
+		return position;
+	}
 	let snappedX = position.x;
 	let snappedY = position.y;
 	let closestXDistance = NODE_SNAP_DISTANCE + 1;
 	let closestYDistance = NODE_SNAP_DISTANCE + 1;
 
 	for (const node of currentNodes) {
-		if (node.id === nodeId || isCommentNodeId(node.id)) {
+		if (node.id === nodeId || isCommentNodeId(node.id) || node.type === "boundary") {
 			continue;
 		}
 

@@ -39,6 +39,17 @@ function areCommentNodePropsEqual(
 	);
 }
 
+function areBoundaryNodePropsEqual(
+	previous: NodeProps<Node<DiagramNodeData, "boundary">>,
+	next: NodeProps<Node<DiagramNodeData, "boundary">>,
+) {
+	return (
+		previous.selected === next.selected &&
+		previous.data.label === next.data.label &&
+		previous.data.kind === next.data.kind
+	);
+}
+
 export const DiagramComponentNode = memo(function DiagramComponentNode({
 	data,
 	selected,
@@ -54,6 +65,18 @@ export const DiagramComponentNode = memo(function DiagramComponentNode({
 		</div>
 	);
 }, areDiagramComponentNodePropsEqual);
+
+export const DiagramBoundaryNode = memo(function DiagramBoundaryNode({
+	data,
+	selected,
+}: NodeProps<Node<DiagramNodeData, "boundary">>) {
+	return (
+		<section className={classNames(styles.boundaryNode, selected && styles.selected)}>
+			<span>{data.kind}</span>
+			<strong>{data.label}</strong>
+		</section>
+	);
+}, areBoundaryNodePropsEqual);
 
 export const CommentNode = memo(function CommentNode({
 	id,

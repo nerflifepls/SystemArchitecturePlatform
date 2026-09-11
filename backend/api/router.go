@@ -74,6 +74,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			protectedRouter.Delete("/diagrams/{diagramId}", diagramHandler.Delete)
 			protectedRouter.Get("/diagrams/{diagramId}/snapshot", diagramHandler.GetSnapshot)
 			protectedRouter.Put("/diagrams/{diagramId}/snapshot", diagramHandler.SaveSnapshot)
+			protectedRouter.Get("/diagrams/{diagramId}/snapshots", diagramHandler.ListSnapshots)
+			protectedRouter.Get("/diagrams/{diagramId}/snapshots/{snapshotVersion}", diagramHandler.GetSnapshotVersion)
 			protectedRouter.Get("/diagrams/{diagramId}/updates", diagramHandler.ListUpdates)
 			protectedRouter.Post("/diagrams/{diagramId}/updates", diagramHandler.AppendUpdate)
 		})

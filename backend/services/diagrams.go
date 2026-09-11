@@ -19,7 +19,9 @@ type DiagramRepository interface {
 	GetDiagramByID(context.Context, uuid.UUID) (domain.Diagram, error)
 	UpdateDiagramTitle(context.Context, uuid.UUID, string) (domain.Diagram, error)
 	DeleteDiagram(context.Context, uuid.UUID) error
-	SaveDiagramSnapshot(context.Context, uuid.UUID, []byte, int64) (domain.Diagram, error)
+	SaveDiagramSnapshot(context.Context, uuid.UUID, []byte, int64, uuid.UUID, string, string) (domain.Diagram, error)
+	ListDiagramSnapshots(context.Context, uuid.UUID, int) ([]domain.DiagramSnapshot, error)
+	GetDiagramSnapshot(context.Context, uuid.UUID, int64) (domain.DiagramSnapshot, error)
 	ListDiagramUpdates(context.Context, uuid.UUID, int64) ([]domain.DiagramUpdate, error)
 	AppendDiagramUpdate(context.Context, uuid.UUID, uuid.UUID, string, uuid.UUID, []byte) (domain.DiagramUpdate, bool, error)
 	GetDiagramAccess(context.Context, uuid.UUID, uuid.UUID) (domain.DiagramAccess, error)
@@ -121,7 +123,7 @@ func (service *DiagramService) GetSnapshot(ctx context.Context, actorUserID uuid
 	return diagram, nil
 }
 
-func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, baseUpdateSeq int64, snapshotBytes []byte) (SnapshotSaveResult, error) {
+func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, baseUpdateSeq int64, snapshotBytes []byte, name string, reason string) (SnapshotSaveResult, error) {
 	diagram, role, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
 	if accessErr != nil {
 		return SnapshotSaveResult{}, accessErr
@@ -138,7 +140,19 @@ func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uui
 	if len(snapshotBytes) == 0 {
 		return SnapshotSaveResult{}, Validation("snapshot body is required", map[string]string{"body": "required"})
 	}
-	updatedDiagram, saveErr := service.diagrams.SaveDiagramSnapshot(ctx, diagramID, snapshotBytes, baseUpdateSeq)
+	trimmedName := strings.TrimSpace(name)
+	if len(trimmedName) > 120 {
+		return SnapshotSaveResult{}, Validation("snapshot name must not exceed 120 characters", map[string]string{"X-Snapshot-Name": "max_120"})
+	}
+	if reason == "" {
+		reason = "automatic"
+	}
+	switch reason {
+	case "automatic", "manual", "restore", "import":
+	default:
+		return SnapshotSaveResult{}, Validation("snapshot reason is invalid", map[string]string{"X-Snapshot-Reason": "invalid"})
+	}
+	updatedDiagram, saveErr := service.diagrams.SaveDiagramSnapshot(ctx, diagramID, snapshotBytes, baseUpdateSeq, actorUserID, trimmedName, reason)
 	if saveErr != nil {
 		if errors.Is(saveErr, domain.ErrConflict) {
 			return SnapshotSaveResult{}, Conflict("snapshot base update sequence is older than the current compacted snapshot")
@@ -146,6 +160,31 @@ func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uui
 		return SnapshotSaveResult{}, mapRepositoryError(saveErr, "diagram snapshot")
 	}
 	return SnapshotSaveResult{SnapshotVersion: updatedDiagram.SnapshotVersion, LastUpdateSeq: updatedDiagram.LastUpdateSeq, SavedAt: updatedDiagram.UpdatedAt}, nil
+}
+
+func (service *DiagramService) ListSnapshots(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, limit int) ([]domain.DiagramSnapshot, error) {
+	if _, _, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID); accessErr != nil {
+		return nil, accessErr
+	}
+	snapshots, listErr := service.diagrams.ListDiagramSnapshots(ctx, diagramID, clampLimit(limit))
+	if listErr != nil {
+		return nil, mapRepositoryError(listErr, "diagram snapshots")
+	}
+	return snapshots, nil
+}
+
+func (service *DiagramService) GetSnapshotVersion(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, snapshotVersion int64) (domain.DiagramSnapshot, error) {
+	if _, _, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID); accessErr != nil {
+		return domain.DiagramSnapshot{}, accessErr
+	}
+	if snapshotVersion < 1 {
+		return domain.DiagramSnapshot{}, BadRequest("snapshotVersion must be a positive integer")
+	}
+	snapshot, getErr := service.diagrams.GetDiagramSnapshot(ctx, diagramID, snapshotVersion)
+	if getErr != nil {
+		return domain.DiagramSnapshot{}, mapRepositoryError(getErr, "diagram snapshot")
+	}
+	return snapshot, nil
 }
 
 func (service *DiagramService) ListUpdates(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, afterSeq int64) ([]domain.DiagramUpdate, int64, int64, error) {

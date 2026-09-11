@@ -1,0 +1,61 @@
+{
+  "benchmark": "Yjs shuffled-delivery convergence",
+  "generatedAt": "2026-09-11T15:32:13.962Z",
+  "nodeVersion": "v24.15.0",
+  "operationsPerClient": 100,
+  "allCasesConverged": true,
+  "cases": [
+    {
+      "clients": 2,
+      "totalLogicalOperations": 200,
+      "generatedUpdates": 200,
+      "deliveredBatches": 20,
+      "generationMs": 5.35,
+      "mergeMs": 8.01,
+      "mergeP50Ms": 0.0615,
+      "mergeP95Ms": 0.5667,
+      "updatesPerSecond": 49949,
+      "finalDocumentBytes": 22208,
+      "converged": true
+    },
+    {
+      "clients": 5,
+      "totalLogicalOperations": 500,
+      "generatedUpdates": 500,
+      "deliveredBatches": 50,
+      "generationMs": 5.87,
+      "mergeMs": 83.53,
+      "mergeP50Ms": 0.3565,
+      "mergeP95Ms": 0.7501,
+      "updatesPerSecond": 29928,
+      "finalDocumentBytes": 55617,
+      "converged": true
+    },
+    {
+      "clients": 10,
+      "totalLogicalOperations": 1000,
+      "generatedUpdates": 1000,
+      "deliveredBatches": 100,
+      "generationMs": 7.58,
+      "mergeMs": 716.12,
+      "mergeP50Ms": 0.7626,
+      "mergeP95Ms": 1.4599,
+      "updatesPerSecond": 13964,
+      "finalDocumentBytes": 111632,
+      "converged": true
+    },
+    {
+      "clients": 25,
+      "totalLogicalOperations": 2500,
+      "generatedUpdates": 2500,
+      "deliveredBatches": 250,
+      "generationMs": 20.81,
+      "mergeMs": 9634.5,
+      "mergeP50Ms": 1.6186,
+      "mergeP95Ms": 2.8605,
+      "updatesPerSecond": 6487,
+      "finalDocumentBytes": 282676,
+      "converged": true
+    }
+  ]
+}

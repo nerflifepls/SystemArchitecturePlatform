@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc && vite build",
+		"benchmark:crdt": "node scripts/crdt-benchmark.mjs",
 		"test": "vitest run",
 		"preview": "vite preview"
 	},

@@ -107,6 +107,18 @@ export type CrdtSnapshotAckDto = {
 	savedAt?: string;
 };
 
+export type DiagramSnapshotDto = {
+	diagramId: string;
+	snapshotVersion: number;
+	baseUpdateSeq: number;
+	byteSize: number;
+	name?: string | null;
+	reason: "initial" | "automatic" | "manual" | "restore" | "import";
+	createdBy: string;
+	authorName: string;
+	createdAt: string;
+};
+
 export type PresenceCursorDto = {
 	x: number;
 	y: number;
