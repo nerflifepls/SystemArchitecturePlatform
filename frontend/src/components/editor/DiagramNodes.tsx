@@ -13,6 +13,7 @@ import {
 	formatCommentTimestamp,
 	type DiagramNodeData,
 } from "./diagramEditorModel";
+import { NodeKindIcon, normalizeNodeKindIconName } from "./NodeKindIcon";
 
 function areDiagramComponentNodePropsEqual(
 	previous: NodeProps<Node<DiagramNodeData, "default">>,
@@ -57,14 +58,26 @@ export const DiagramComponentNode = memo(function DiagramComponentNode({
 	data,
 	selected,
 }: NodeProps<Node<DiagramNodeData, "default">>) {
+	const iconKind = normalizeNodeKindIconName(data.kind);
+
 	return (
-		<div className={classNames(styles.componentNode, selected && styles.selected)}>
+		<div
+			className={classNames(styles.componentNode, selected && styles.selected)}
+			data-node-kind={iconKind}
+		>
 			<Handle id="top" type="source" position={Position.Top} className={styles.nodeHandle} />
 			<Handle id="right" type="source" position={Position.Right} className={styles.nodeHandle} />
 			<Handle id="bottom" type="source" position={Position.Bottom} className={styles.nodeHandle} />
 			<Handle id="left" type="source" position={Position.Left} className={styles.nodeHandle} />
-			<span>{data.kind}</span>
-			<strong>{data.label}</strong>
+			<div className={styles.nodeIdentity}>
+				<span className={styles.nodeIcon} aria-hidden="true">
+					<NodeKindIcon kind={data.kind} />
+				</span>
+				<span className={styles.nodeCopy}>
+					<span className={styles.nodeKind}>{data.kind}</span>
+					<strong className={styles.nodeLabel}>{data.label}</strong>
+				</span>
+			</div>
 		</div>
 	);
 }, areDiagramComponentNodePropsEqual);
@@ -85,8 +98,15 @@ export const DiagramBoundaryNode = memo(function DiagramBoundaryNode({
 				handleClassName={styles.boundaryResizeHandle}
 				lineClassName={styles.boundaryResizeLine}
 			/>
-			<span>{data.kind}</span>
-			<strong>{data.label}</strong>
+			<div className={styles.boundaryIdentity}>
+				<span className={styles.boundaryIcon} aria-hidden="true">
+					<NodeKindIcon kind="boundary" />
+				</span>
+				<span className={styles.boundaryCopy}>
+					<span className={styles.boundaryKind}>{data.kind}</span>
+					<strong className={styles.boundaryLabel}>{data.label}</strong>
+				</span>
+			</div>
 		</section>
 	);
 }, areBoundaryNodePropsEqual);
@@ -161,6 +181,7 @@ export const CommentNode = memo(function CommentNode({
 				{!data.readOnly ?
 					<button
 						className={classNames("icon-button danger nodrag nopan", styles.deleteButton)}
+						data-export-ignore="true"
 						type="button"
 						onClick={(event) => {
 							event.stopPropagation();
@@ -185,6 +206,7 @@ export const CommentNode = memo(function CommentNode({
 			{!data.readOnly ?
 				<span
 					className={classNames(styles.resizeHandle, "nodrag", "nopan")}
+					data-export-ignore="true"
 					onPointerDown={handleResizeStart}
 					aria-label="Resize comment"
 				/>

@@ -34,6 +34,12 @@ import {
 	type DiagramNode,
 	type SyncState,
 } from "./diagramEditorModel";
+import {
+	countDiagramHistoryKinds,
+	filterDiagramHistory,
+	getDiagramSaveKind,
+	type DiagramHistoryFilter,
+} from "./diagramHistory";
 import type { AlignmentAxis, LayoutDirection } from "./diagramLayout";
 
 type PanelTab = "build" | "review" | "history" | "export";
@@ -111,6 +117,9 @@ function formatTimestamp(value: string | null) {
 export function DiagramEditorPanel(props: DiagramEditorPanelProps) {
 	const [activeTab, setActiveTab] = useState<PanelTab>("build");
 	const [snapshotName, setSnapshotName] = useState("");
+	const [historyFilter, setHistoryFilter] = useState<DiagramHistoryFilter>("all");
+	const historyCounts = countDiagramHistoryKinds(props.historyItems);
+	const filteredHistoryItems = filterDiagramHistory(props.historyItems, historyFilter);
 
 	if (props.isCollapsed) {
 		return (
@@ -264,15 +273,36 @@ export function DiagramEditorPanel(props: DiagramEditorPanelProps) {
 							<label><span>Version label</span><input value={snapshotName} onChange={(event) => setSnapshotName(event.target.value)} maxLength={120} placeholder="Before evaluation run" disabled={props.readOnly} /></label>
 							<button className="primary-button" type="submit" disabled={props.readOnly || props.isSavingSnapshot}><Save size={15} /><span>{props.isSavingSnapshot ? "Saving…" : "Create version"}</span></button>
 						</form>
+						<div className={styles.historyFilters} role="group" aria-label="Filter version history">
+							{([
+								["all", "All", props.historyItems.length, "Show every saved version"],
+								["manual", "Manual", historyCounts.manual, "Show named versions, imports, and restores"],
+								["automatic", "Automatic", historyCounts.automatic, "Show autosaves and the initial baseline"],
+							] as const).map(([filter, label, count, title]) => (
+								<button
+									key={filter}
+									type="button"
+									className={classNames(historyFilter === filter && styles.activeHistoryFilter)}
+									onClick={() => setHistoryFilter(filter)}
+									aria-pressed={historyFilter === filter}
+									aria-label={`${label}: ${count} ${count === 1 ? "version" : "versions"}`}
+									title={title}
+								>
+									<span>{label}</span>
+									<small>{count}</small>
+								</button>
+							))}
+						</div>
 						<div className={styles.historyList}>
-							{props.historyItems.map((snapshot) => (
+							{filteredHistoryItems.map((snapshot) => (
 								<article key={snapshot.snapshotVersion} className={styles.historyItem}>
-									<div><strong>v{snapshot.snapshotVersion} · {snapshot.name || snapshot.reason}</strong><span>{snapshot.authorName} · {formatTimestamp(snapshot.createdAt)}</span><small>{formatBytes(snapshot.byteSize)} · seq {snapshot.baseUpdateSeq}</small></div>
+									<div><strong>v{snapshot.snapshotVersion} · {snapshot.name || snapshot.reason}</strong><span>{snapshot.authorName} · {formatTimestamp(snapshot.createdAt)}</span><small>{getDiagramSaveKind(snapshot) === "manual" ? "Manual" : "Automatic"} · {formatBytes(snapshot.byteSize)} · seq {snapshot.baseUpdateSeq}</small></div>
 									<button className="secondary-button" type="button" onClick={() => props.onRestoreSnapshot(snapshot)} disabled={props.readOnly || props.restoringVersion !== null || snapshot.snapshotVersion === props.snapshotVersion}>{props.restoringVersion === snapshot.snapshotVersion ? "Restoring…" : "Restore"}</button>
 								</article>
 							))}
 							{props.isHistoryLoading ? <div className={styles.emptyState}>Loading version history…</div> : null}
 							{!props.isHistoryLoading && props.historyItems.length === 0 ? <div className={styles.emptyState}>Create a named version to begin the audit trail.</div> : null}
+							{!props.isHistoryLoading && props.historyItems.length > 0 && filteredHistoryItems.length === 0 ? <div className={styles.emptyState}>No {historyFilter} versions yet.</div> : null}
 						</div>
 					</section>
 				</div>
@@ -282,7 +312,7 @@ export function DiagramEditorPanel(props: DiagramEditorPanelProps) {
 				<div className={styles.tabContent}>
 					<section className={styles.section} aria-labelledby="export-title">
 						<div className={styles.title}><Download size={15} /><h2 id="export-title">Portable artifacts</h2></div>
-						<p className={styles.helperText}>JSON is re-importable. SVG and PDF stay sharp in a thesis; PNG is presentation-ready.</p>
+						<p className={styles.helperText}>JSON is re-importable. SVG, PNG, and PDF mirror the full canvas styling, including icons, boundaries, labels, and the grid.</p>
 						<div className={styles.exportGrid}>
 							<button className="secondary-button" type="button" onClick={() => props.onExport("json")}><FileJson size={16} /><span>JSON</span></button>
 							<button className="secondary-button" type="button" onClick={() => props.onExport("svg")}><Download size={16} /><span>SVG</span></button>

@@ -96,6 +96,7 @@ export function DiagramCanvas({
 								<div
 									key={connection.connectionId}
 									className={styles.remoteCursor}
+									data-export-ignore="true"
 									style={
 										{
 											"--cursor-color": connection.color,

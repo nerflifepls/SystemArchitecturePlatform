@@ -109,6 +109,23 @@
 	background: var(--primary-dim);
 }
 
+.frame[data-diagram-exporting="true"] :global(.react-flow__controls),
+.frame[data-diagram-exporting="true"] :global(.react-flow__minimap),
+.frame[data-diagram-exporting="true"] :global(.react-flow__attribution),
+.frame[data-diagram-exporting="true"] :global(.react-flow__selection),
+.frame[data-diagram-exporting="true"] :global(.react-flow__nodesselection),
+.frame[data-diagram-exporting="true"] :global(.react-flow__resize-control),
+.frame[data-diagram-exporting="true"] :global(.react-flow__handle),
+.frame[data-diagram-exporting="true"] :global(.react-flow__edgeupdater),
+.frame[data-diagram-exporting="true"] :global(.react-flow__connectionline),
+.frame[data-diagram-exporting="true"] [data-export-ignore="true"] {
+	display: none !important;
+}
+
+.frame[data-diagram-exporting="true"] :global(.react-flow__edge.selected .react-flow__edge-path) {
+	stroke: var(--primary);
+}
+
 @media (max-width: 640px) {
 	.remoteCursor span {
 		max-width: 124px;

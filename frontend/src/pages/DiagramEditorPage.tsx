@@ -25,6 +25,7 @@ import {
 	createDiagramDocument,
 	exportDiagram,
 	parseDiagramDocument,
+	type DiagramExportSurface,
 } from "../components/editor/diagramDocument";
 import {
 	alignDiagramNodes,
@@ -1706,6 +1707,34 @@ export function DiagramEditorPage() {
 	async function handleExport(format: "json" | "svg" | "png" | "pdf") {
 		try {
 			setLastError(null);
+			const frame = canvasFrameRef.current;
+			const reactFlowInstance = reactFlowInstanceRef.current;
+			const previousViewport = reactFlowInstance?.getViewport();
+			const exportSurface: DiagramExportSurface | undefined =
+				frame && reactFlowInstance && previousViewport ?
+					{
+						element: frame,
+						prepare: async () => {
+							frame.dataset.diagramExporting = "true";
+							await reactFlowInstance.fitView({
+								padding: 0.14,
+								duration: 0,
+								minZoom: 0.2,
+								maxZoom: 1.4,
+							});
+						},
+						restore: async () => {
+							try {
+								await reactFlowInstance.setViewport(previousViewport, { duration: 0 });
+							} finally {
+								delete frame.dataset.diagramExporting;
+							}
+						},
+					}
+				: undefined;
+			if (format !== "json" && !exportSurface) {
+				throw new Error("The diagram canvas is still loading. Try the export again in a moment.");
+			}
 			await exportDiagram(
 				createDiagramDocument(
 					diagramQuery.data?.title ?? "System design",
@@ -1714,6 +1743,7 @@ export function DiagramEditorPage() {
 					commentsRef.current,
 				),
 				format,
+				exportSurface,
 			);
 		} catch (error) {
 			setLastError(getErrorMessage(error));

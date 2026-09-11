@@ -24,6 +24,12 @@ export type DiagramDocument = {
 
 type ExportFormat = "json" | "svg" | "png" | "pdf";
 
+export type DiagramExportSurface = {
+	element: HTMLElement;
+	prepare?: () => Promise<void> | void;
+	restore?: () => Promise<void> | void;
+};
+
 type Bounds = {
 	minX: number;
 	minY: number;
@@ -33,9 +39,23 @@ type Bounds = {
 	height: number;
 };
 
-const DEFAULT_NODE_WIDTH = 190;
+const DEFAULT_NODE_WIDTH = 224;
 const DEFAULT_NODE_HEIGHT = 78;
 const EXPORT_PADDING = 70;
+const CAPTURE_BACKGROUND = "#071116";
+const MAX_CAPTURE_DIMENSION = 8192;
+const EDITOR_ONLY_SELECTOR = [
+	"[data-export-ignore='true']",
+	".react-flow__controls",
+	".react-flow__minimap",
+	".react-flow__attribution",
+	".react-flow__selection",
+	".react-flow__nodesselection",
+	".react-flow__resize-control",
+	".react-flow__handle",
+	".react-flow__edgeupdater",
+	".react-flow__connectionline",
+].join(",");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -114,6 +134,110 @@ function downloadBlob(filename: string, blob: Blob) {
 	anchor.click();
 	anchor.remove();
 	window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function waitForPaint() {
+	if (typeof requestAnimationFrame !== "function") {
+		return Promise.resolve();
+	}
+
+	return new Promise<void>((resolve) => {
+		requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+	});
+}
+
+async function settleExportSurface() {
+	if ("fonts" in document) {
+		await document.fonts.ready;
+	}
+	await waitForPaint();
+}
+
+function captureDimensions(element: HTMLElement) {
+	const bounds = element.getBoundingClientRect();
+	const width = Math.ceil(element.clientWidth || bounds.width);
+	const height = Math.ceil(element.clientHeight || bounds.height);
+
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width < 2 || height < 2) {
+		throw new Error("The diagram canvas is not ready to export yet.");
+	}
+
+	return { width, height };
+}
+
+function includeInVisualExport(node: HTMLElement) {
+	return !node.matches?.(EDITOR_ONLY_SELECTOR);
+}
+
+function dataUrlToBlob(dataUrl: string, fallbackType: string) {
+	const separatorIndex = dataUrl.indexOf(",");
+	if (!dataUrl.startsWith("data:") || separatorIndex < 0) {
+		throw new Error("The diagram renderer returned an invalid image.");
+	}
+
+	const metadata = dataUrl.slice(5, separatorIndex);
+	const payload = dataUrl.slice(separatorIndex + 1);
+	const mimeType = metadata.split(";")[0] || fallbackType;
+	if (!metadata.split(";").includes("base64")) {
+		return new Blob([decodeURIComponent(payload)], { type: mimeType });
+	}
+
+	const binary = atob(payload);
+	const bytes = new Uint8Array(binary.length);
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index);
+	}
+	return new Blob([bytes], { type: mimeType });
+}
+
+async function captureVisualExport(
+	surface: DiagramExportSurface,
+	format: Exclude<ExportFormat, "json">,
+	title: string,
+) {
+	const { width, height } = captureDimensions(surface.element);
+	const pixelRatio = Math.max(0.5, Math.min(2, MAX_CAPTURE_DIMENSION / Math.max(width, height)));
+	const imageOptions = {
+		width,
+		height,
+		backgroundColor: CAPTURE_BACKGROUND,
+		cacheBust: true,
+		filter: includeInVisualExport,
+		preferredFontFormat: "woff2",
+		pixelRatio,
+	};
+	const { toBlob, toPng, toSvg } = await import("html-to-image");
+
+	if (format === "svg") {
+		return dataUrlToBlob(await toSvg(surface.element, imageOptions), "image/svg+xml;charset=utf-8");
+	}
+
+	if (format === "png") {
+		const blob = await toBlob(surface.element, imageOptions);
+		if (!blob) {
+			throw new Error("Could not encode the diagram PNG.");
+		}
+		return blob;
+	}
+
+	const pngDataUrl = await toPng(surface.element, imageOptions);
+	const { jsPDF } = await import("jspdf");
+	const pdf = new jsPDF({
+		orientation: width >= height ? "landscape" : "portrait",
+		unit: "px",
+		format: [width, height],
+		compress: true,
+		hotfixes: ["px_scaling"],
+	});
+	const pageWidth = pdf.internal.pageSize.getWidth();
+	const pageHeight = pdf.internal.pageSize.getHeight();
+	pdf.setProperties({
+		title,
+		subject: "System design diagram",
+		creator: "System Design Workspace",
+	});
+	pdf.addImage(pngDataUrl, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+	return pdf.output("blob");
 }
 
 export function createDiagramDocument(
@@ -384,12 +508,29 @@ async function svgToPng(svg: string) {
 	}
 }
 
-export async function exportDiagram(documentModel: DiagramDocument, format: ExportFormat) {
+export async function exportDiagram(
+	documentModel: DiagramDocument,
+	format: ExportFormat,
+	surface?: DiagramExportSurface,
+) {
 	const baseName = sanitizeFilename(documentModel.diagram.title);
 	if (format === "json") {
 		downloadBlob(`${baseName}.system-design.json`, new Blob([JSON.stringify(documentModel, null, 2)], { type: "application/json" }));
 		return;
 	}
+
+	if (surface) {
+		try {
+			await surface.prepare?.();
+			await settleExportSurface();
+			const blob = await captureVisualExport(surface, format, documentModel.diagram.title);
+			downloadBlob(`${baseName}.${format}`, blob);
+			return;
+		} finally {
+			await surface.restore?.();
+		}
+	}
+
 	const svg = renderDiagramSvg(documentModel);
 	if (format === "svg") {
 		downloadBlob(`${baseName}.svg`, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));

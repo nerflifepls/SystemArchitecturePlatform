@@ -1,16 +1,13 @@
 .componentNode {
-	display: grid;
-	min-width: 156px;
-	max-width: 240px;
-	gap: 5px;
-	padding: 15px 19px;
+	min-width: 224px;
+	max-width: 310px;
+	padding: 13px 16px;
 	border: 1px solid oklch(0.72 0.16 150 / 0.5);
 	border-radius: 12px;
 	background: linear-gradient(145deg, oklch(0.25 0.027 240), oklch(0.185 0.02 240));
 	box-shadow: 0 12px 30px oklch(0.05 0.02 240 / 0.36);
 	color: var(--text-main);
 	font-weight: 900;
-	text-align: center;
 }
 
 .componentNode.selected {
@@ -20,21 +17,64 @@
 		0 16px 34px oklch(0.05 0.02 240 / 0.42);
 }
 
-.componentNode span,
-.componentNode strong {
+.nodeIdentity {
+	display: grid;
+	grid-template-columns: 38px minmax(0, 1fr);
+	align-items: center;
+	gap: 11px;
+	min-width: 0;
+}
+
+.nodeIcon,
+.boundaryIcon {
+	display: grid;
+	place-items: center;
+	box-sizing: border-box;
+	border: 1px solid oklch(0.72 0.16 150 / 0.34);
+	background: linear-gradient(145deg, oklch(0.72 0.16 150 / 0.16), oklch(0.65 0.14 240 / 0.1));
+	color: var(--primary-glow);
+}
+
+.nodeIcon {
+	width: 38px;
+	height: 38px;
+	border-radius: 11px;
+	box-shadow: inset 0 1px 0 oklch(0.95 0.02 150 / 0.08);
+}
+
+.nodeIcon svg {
+	width: 22px;
+	height: 22px;
+}
+
+.nodeCopy,
+.boundaryCopy {
+	display: grid;
+	min-width: 0;
+}
+
+.nodeCopy {
+	gap: 4px;
+	text-align: left;
+}
+
+.nodeKind,
+.nodeLabel,
+.boundaryKind,
+.boundaryLabel {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.componentNode span {
+.nodeKind {
 	color: var(--text-sub);
 	font-size: 0.7rem;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 
-.componentNode strong {
+.nodeLabel {
 	font-size: 0.94rem;
 }
 
@@ -57,22 +97,50 @@
 	box-shadow: inset 0 0 0 1px oklch(0.72 0.16 150 / 0.18);
 }
 
-.boundaryNode span,
-.boundaryNode strong {
-	display: block;
+.boundaryIdentity {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
 }
 
-.boundaryNode span {
+.boundaryIcon {
+	flex: 0 0 auto;
+	width: 32px;
+	height: 32px;
+	border-radius: 9px;
+}
+
+.boundaryIcon svg {
+	width: 19px;
+	height: 19px;
+}
+
+.boundaryCopy {
+	gap: 2px;
+}
+
+.boundaryKind {
 	font-size: 0.67rem;
 	font-weight: 900;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }
 
-.boundaryNode strong {
-	margin-top: 3px;
+.boundaryLabel {
 	color: var(--text-main);
 	font-size: 0.88rem;
+}
+
+:global([data-diagram-exporting="true"]) .componentNode.selected {
+	border-color: oklch(0.72 0.16 150 / 0.5);
+	box-shadow: 0 12px 30px oklch(0.05 0.02 240 / 0.36);
+}
+
+:global([data-diagram-exporting="true"]) .boundaryNode.selected {
+	border-color: oklch(0.68 0.12 150 / 0.5);
+	background: oklch(0.2 0.022 240 / 0.24);
+	box-shadow: none;
 }
 
 .boundaryResizeHandle {
@@ -240,4 +308,9 @@
 	background: transparent;
 	box-shadow: none;
 	padding: 0;
+}
+
+:global([data-diagram-exporting="true"]) .commentNode.selected {
+	border-color: oklch(0.72 0.16 150 / 0.44);
+	box-shadow: 0 16px 34px oklch(0.05 0.02 240 / 0.32);
 }
