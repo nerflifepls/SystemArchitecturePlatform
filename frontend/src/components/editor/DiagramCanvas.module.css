@@ -56,10 +56,20 @@
 }
 
 :global(.react-flow__edge-path) {
-	stroke: var(--primary);
+	stroke: var(--border-hi);
 	stroke-width: 2.2;
 	stroke-linecap: round;
-	filter: drop-shadow(0 2px 5px oklch(0.72 0.16 150 / 0.18));
+	filter: drop-shadow(0 2px 5px oklch(0.04 0.02 240 / 0.28));
+}
+
+:global(.react-flow__edge:hover .react-flow__edge-path) {
+	stroke: var(--primary);
+}
+
+:global(.react-flow__edge.selected .react-flow__edge-path) {
+	stroke: var(--primary-glow);
+	stroke-width: 3.2;
+	filter: drop-shadow(0 2px 7px oklch(0.72 0.16 150 / 0.46));
 }
 
 :global(.react-flow__edge-textbg) {
@@ -123,8 +133,10 @@
 	display: none !important;
 }
 
-.frame[data-diagram-exporting="true"] :global(.react-flow__edge.selected .react-flow__edge-path) {
+.frame[data-diagram-exporting="true"] :global(.react-flow__edge .react-flow__edge-path) {
 	stroke: var(--primary);
+	stroke-width: 2.2;
+	filter: drop-shadow(0 2px 5px oklch(0.72 0.16 150 / 0.18));
 }
 
 @media (max-width: 640px) {

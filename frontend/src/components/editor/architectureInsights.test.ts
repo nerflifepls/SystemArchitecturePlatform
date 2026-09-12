@@ -29,6 +29,22 @@ describe("architecture insights", () => {
 		expect(result.criticalCount).toBe(2);
 	});
 
+	it("targets only client-to-database connections when clients are also connected to each other", () => {
+		const result = analyzeArchitecture(
+			[node("client-a", "client"), node("client-b", "client"), node("db", "database")],
+			[
+				edge("client-to-client", "client-a", "client-b"),
+				edge("client-a-to-db", "client-a", "db"),
+				edge("db-to-client-b", "db", "client-b"),
+			],
+		);
+		const insight = result.insights.find((item) => item.id === "client-database-coupling");
+
+		expect(insight?.edgeIds).toEqual(["client-a-to-db", "db-to-client-b"]);
+		expect(insight?.edgeIds).not.toContain("client-to-client");
+		expect(insight?.nodeIds).toEqual(["client-a", "db", "client-b"]);
+	});
+
 	it("detects strongly connected dependency cycles", () => {
 		const result = analyzeArchitecture(
 			[node("a", "service"), node("b", "service"), node("c", "worker")],
