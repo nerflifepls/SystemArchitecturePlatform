@@ -283,12 +283,6 @@ export function ProjectPage() {
 							<h2 id="diagrams-title">Diagrams</h2>
 							<p>Open a canvas to continue designing with your team.</p>
 						</div>
-						{canEditContent ?
-							<a className={styles.textAction} href="#new-diagram">
-								<Plus size={15} />
-								New diagram
-							</a>
-						: null}
 					</header>
 
 					{diagramsQuery.isError ? <ErrorPanel>{getErrorMessage(diagramsQuery.error)}</ErrorPanel> : null}

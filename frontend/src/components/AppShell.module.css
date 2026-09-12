@@ -155,7 +155,7 @@
 
 .workspaceHeading {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto auto;
+	grid-template-columns: minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 7px;
 	margin: 24px 0 5px;
@@ -173,21 +173,6 @@
 	color: var(--text-sub);
 	font-size: 0.65rem;
 	font-weight: 800;
-}
-
-.addWorkspace {
-	display: inline-grid;
-	width: 25px;
-	height: 25px;
-	place-items: center;
-	border-radius: 7px;
-	color: var(--primary-glow);
-	transition: background 160ms ease, color 160ms ease;
-}
-
-.addWorkspace:hover {
-	background: var(--primary-dim);
-	color: var(--text-main);
 }
 
 .workspaceLinks {
@@ -402,27 +387,6 @@
 	gap: 10px;
 }
 
-.createLink {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	min-height: 36px;
-	padding: 0 11px;
-	border: 1px solid oklch(0.74 0.16 150 / 0.22);
-	border-radius: 9px;
-	background: var(--primary-dim);
-	color: var(--primary-glow);
-	font-size: 0.74rem;
-	font-weight: 800;
-	transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
-}
-
-.createLink:hover {
-	border-color: oklch(0.74 0.16 150 / 0.4);
-	background: oklch(0.74 0.16 150 / 0.16);
-	color: var(--text-main);
-}
-
 .topbarAccount {
 	display: flex;
 	align-items: center;
@@ -533,7 +497,6 @@
 
 	.contextTrail > span,
 	.contextTrail svg,
-	.createLink span,
 	.topbarAccount > span:last-child { display: none; }
 
 	.content {

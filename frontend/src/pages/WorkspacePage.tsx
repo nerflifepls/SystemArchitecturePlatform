@@ -201,12 +201,6 @@ export function WorkspacePage() {
 							<h2 id="projects-title">Projects</h2>
 							<p>Each project keeps a design effort focused and easy to find.</p>
 						</div>
-						{canEditContent ?
-							<a className={styles.textAction} href="#new-project">
-								<Plus size={15} />
-								New project
-							</a>
-						: null}
 					</header>
 
 					{projectsQuery.isError ?

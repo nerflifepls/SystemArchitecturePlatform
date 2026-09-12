@@ -5,8 +5,6 @@ import {
 	ChevronRight,
 	LayoutDashboard,
 	LogOut,
-	Plus,
-	Sparkles,
 } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -79,9 +77,6 @@ export function AppShell() {
 					<div className={styles.workspaceHeading}>
 						<p className={styles.navLabel}>Workspaces</p>
 						<span className={styles.countBadge}>{workspacesQuery.data?.length ?? 0}</span>
-						<Link className={styles.addWorkspace} to="/#new-workspace" aria-label="Create workspace">
-							<Plus size={14} />
-						</Link>
 					</div>
 
 					<div className={styles.workspaceLinks}>
@@ -150,10 +145,6 @@ export function AppShell() {
 						<strong>{currentSection}</strong>
 					</div>
 					<div className={styles.topbarActions}>
-						<Link className={styles.createLink} to="/#new-workspace" aria-label="New workspace">
-							<Sparkles size={15} />
-							<span>New workspace</span>
-						</Link>
 						<div className={styles.topbarAccount}>
 							<span className={styles.compactAvatar} aria-hidden="true">{userInitial}</span>
 							<span>{userLabel}</span>
