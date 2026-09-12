@@ -24,6 +24,7 @@
 	filter: drop-shadow(0 8px 14px oklch(0.04 0.02 240 / 0.42));
 	pointer-events: none;
 	transform-origin: 0 0;
+	will-change: transform;
 }
 
 .remoteCursor svg {

@@ -166,7 +166,8 @@ export function DiagramEditorPage() {
 	const initialUpdatesAppliedRef = useRef(false);
 	const clientIdRef = useRef(crypto.randomUUID());
 	const cursorColorRef = useRef(createVibrantCursorColor());
-	const lastPresenceSentAtRef = useRef(0);
+	const pendingPresenceCursorRef = useRef<PresenceCursorDto | null>(null);
+	const presenceAnimationFrameRef = useRef<number | null>(null);
 	const persistedUpdateSeqRef = useRef(0);
 	const pendingUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set());
 	const pendingQueueRef = useRef<QueuedDiagramUpdate[]>([]);
@@ -429,20 +430,12 @@ export function DiagramEditorPage() {
 		}
 	}, [flushPendingQueue]);
 
-	const sendPresenceUpdate = useCallback((cursor: PresenceCursorDto | null, force = false) => {
+	const transmitPresenceUpdate = useCallback((cursor: PresenceCursorDto | null) => {
 		const websocket = websocketRef.current;
 
 		if (!websocket || websocket.readyState !== WebSocket.OPEN) {
 			return;
 		}
-
-		const now = Date.now();
-
-		if (!force && now - lastPresenceSentAtRef.current < 70) {
-			return;
-		}
-
-		lastPresenceSentAtRef.current = now;
 		websocket.send(
 			JSON.stringify({
 				type: "presence:update",
@@ -458,6 +451,33 @@ export function DiagramEditorPage() {
 			}),
 		);
 	}, []);
+
+	const sendPresenceUpdate = useCallback(
+		(cursor: PresenceCursorDto | null, force = false) => {
+			if (force) {
+				if (presenceAnimationFrameRef.current !== null) {
+					window.cancelAnimationFrame(presenceAnimationFrameRef.current);
+					presenceAnimationFrameRef.current = null;
+				}
+				pendingPresenceCursorRef.current = null;
+				transmitPresenceUpdate(cursor);
+				return;
+			}
+
+			pendingPresenceCursorRef.current = cursor;
+			if (presenceAnimationFrameRef.current !== null) {
+				return;
+			}
+
+			presenceAnimationFrameRef.current = window.requestAnimationFrame(() => {
+				presenceAnimationFrameRef.current = null;
+				const latestCursor = pendingPresenceCursorRef.current;
+				pendingPresenceCursorRef.current = null;
+				transmitPresenceUpdate(latestCursor);
+			});
+		},
+		[transmitPresenceUpdate],
+	);
 
 	useEffect(() => {
 		canEditRef.current = canEdit;
@@ -1088,6 +1108,10 @@ export function DiagramEditorPage() {
 
 	useEffect(() => {
 		return () => {
+			if (presenceAnimationFrameRef.current !== null) {
+				window.cancelAnimationFrame(presenceAnimationFrameRef.current);
+			}
+
 			if (snapshotTimerRef.current) {
 				window.clearTimeout(snapshotTimerRef.current);
 			}

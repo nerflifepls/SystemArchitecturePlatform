@@ -100,7 +100,7 @@ export function DiagramCanvas({
 									style={
 										{
 											"--cursor-color": connection.color,
-											transform: `translate(${cursor.x}px, ${cursor.y}px)`,
+											transform: `translate3d(${cursor.x}px, ${cursor.y}px, 0)`,
 										} as CSSProperties
 									}
 								>
