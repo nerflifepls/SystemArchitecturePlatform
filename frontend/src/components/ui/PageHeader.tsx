@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import styles from "./PageHeader.module.css";
 
 type PageHeaderProps = {
-	eyebrow: string;
+	eyebrow: ReactNode;
 	title: ReactNode;
 	description?: ReactNode;
 	actions?: ReactNode;
@@ -11,7 +11,7 @@ type PageHeaderProps = {
 
 export function PageHeader({ eyebrow, title, description, actions }: PageHeaderProps) {
 	return (
-		<div className={styles.header}>
+		<header className={styles.header}>
 			<div className={styles.titleStack}>
 				<span className="eyebrow">{eyebrow}</span>
 				<h1>{title}</h1>
@@ -20,6 +20,6 @@ export function PageHeader({ eyebrow, title, description, actions }: PageHeaderP
 			{actions ?
 				<div className={styles.actions}>{actions}</div>
 			:	null}
-		</div>
+		</header>
 	);
 }

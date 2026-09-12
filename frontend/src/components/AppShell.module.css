@@ -1,0 +1,546 @@
+.shell {
+	display: grid;
+	grid-template-columns: 264px minmax(0, 1fr);
+	min-height: 100vh;
+}
+
+.sidebar {
+	display: flex;
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	height: 100vh;
+	min-width: 0;
+	flex-direction: column;
+	padding: 22px 15px 16px;
+	border-right: 1px solid var(--border);
+	background:
+		radial-gradient(circle at 12% 0%, oklch(0.74 0.16 150 / 0.08), transparent 16rem),
+		linear-gradient(180deg, oklch(0.145 0.018 240 / 0.99), oklch(0.115 0.014 240 / 0.99));
+	box-shadow: 18px 0 50px oklch(0.035 0.014 240 / 0.2);
+	overflow: hidden;
+}
+
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	padding: 1px 7px 22px;
+}
+
+.brandMark {
+	display: inline-grid;
+	position: relative;
+	width: 42px;
+	height: 42px;
+	flex: 0 0 auto;
+	place-items: center;
+	border: 1px solid oklch(0.82 0.14 150 / 0.3);
+	border-radius: 13px;
+	background: linear-gradient(145deg, var(--primary-glow), var(--primary) 46%, var(--secondary));
+	box-shadow: 0 12px 28px oklch(0.72 0.16 150 / 0.2), inset 0 1px 0 oklch(1 0 0 / 0.3);
+	color: var(--text-dark);
+}
+
+.brandCopy {
+	display: grid;
+	gap: 1px;
+	min-width: 0;
+}
+
+.brandCopy strong,
+.brandCopy span,
+.workspaceName,
+.userCopy strong,
+.userCopy span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.brandCopy strong {
+	font-size: 0.91rem;
+	font-weight: 800;
+	letter-spacing: -0.02em;
+}
+
+.brandCopy span {
+	color: var(--text-sub);
+	font-size: 0.67rem;
+}
+
+.navigation {
+	display: grid;
+	align-content: start;
+	gap: 5px;
+	min-height: 0;
+}
+
+.navLabel {
+	margin: 0;
+	padding: 0 11px;
+	color: oklch(0.66 0.027 230);
+	font-size: 0.63rem;
+	font-weight: 800;
+	letter-spacing: 0.15em;
+	text-transform: uppercase;
+}
+
+.navLink,
+.workspaceLink {
+	display: flex;
+	position: relative;
+	align-items: center;
+	min-width: 0;
+	border: 1px solid transparent;
+	color: var(--text-sub);
+	transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.navLink {
+	gap: 10px;
+	min-height: 44px;
+	margin-top: 3px;
+	padding: 8px 10px;
+	border-radius: 11px;
+	font-size: 0.84rem;
+	font-weight: 700;
+}
+
+.navIcon {
+	display: inline-grid;
+	width: 28px;
+	height: 28px;
+	place-items: center;
+	border-radius: 8px;
+	background: oklch(0.22 0.022 240 / 0.7);
+	color: oklch(0.76 0.035 230);
+}
+
+.navLink:hover,
+.navLink.active,
+.workspaceLink:hover,
+.workspaceLink.active {
+	border-color: oklch(0.74 0.16 150 / 0.2);
+	background: linear-gradient(90deg, oklch(0.74 0.16 150 / 0.13), oklch(0.67 0.14 240 / 0.055));
+	color: var(--text-main);
+}
+
+.navLink.active .navIcon {
+	background: oklch(0.74 0.16 150 / 0.16);
+	color: var(--primary-glow);
+}
+
+.navLink::before,
+.workspaceLink::before {
+	position: absolute;
+	left: -16px;
+	width: 3px;
+	height: 20px;
+	border-radius: 0 4px 4px 0;
+	background: var(--primary);
+	box-shadow: 0 0 15px oklch(0.74 0.16 150 / 0.45);
+	content: "";
+	opacity: 0;
+	transform: scaleY(0.55);
+	transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.navLink.active::before,
+.workspaceLink.active::before {
+	opacity: 1;
+	transform: scaleY(1);
+}
+
+.workspaceHeading {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: 7px;
+	margin: 24px 0 5px;
+}
+
+.countBadge {
+	display: inline-grid;
+	min-width: 22px;
+	height: 21px;
+	place-items: center;
+	padding: 0 6px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: oklch(0.21 0.022 240 / 0.66);
+	color: var(--text-sub);
+	font-size: 0.65rem;
+	font-weight: 800;
+}
+
+.addWorkspace {
+	display: inline-grid;
+	width: 25px;
+	height: 25px;
+	place-items: center;
+	border-radius: 7px;
+	color: var(--primary-glow);
+	transition: background 160ms ease, color 160ms ease;
+}
+
+.addWorkspace:hover {
+	background: var(--primary-dim);
+	color: var(--text-main);
+}
+
+.workspaceLinks {
+	display: grid;
+	align-content: start;
+	gap: 4px;
+	min-height: 0;
+	max-height: calc(100vh - 390px);
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-hi) transparent;
+}
+
+.workspaceLink {
+	gap: 9px;
+	min-height: 41px;
+	padding: 7px 9px;
+	border-radius: 10px;
+	font-size: 0.79rem;
+	font-weight: 700;
+}
+
+.workspaceMonogram {
+	display: inline-grid;
+	width: 25px;
+	height: 25px;
+	flex: 0 0 auto;
+	place-items: center;
+	border: 1px solid oklch(0.67 0.14 240 / 0.23);
+	border-radius: 7px;
+	background: var(--secondary-dim);
+	color: oklch(0.83 0.075 240);
+	font-size: 0.66rem;
+	font-weight: 900;
+}
+
+.workspaceLink.active .workspaceMonogram {
+	border-color: oklch(0.74 0.16 150 / 0.28);
+	background: var(--primary-dim);
+	color: var(--primary-glow);
+}
+
+.workspaceName {
+	flex: 1;
+}
+
+.workspaceChevron {
+	flex: 0 0 auto;
+	opacity: 0;
+	transform: translateX(-3px);
+	transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.workspaceLink:hover .workspaceChevron,
+.workspaceLink.active .workspaceChevron {
+	opacity: 0.9;
+	transform: translateX(0);
+}
+
+.navMessage {
+	padding: 8px 11px;
+	color: var(--text-sub);
+	font-size: 0.72rem;
+	line-height: 1.5;
+}
+
+.navSkeleton {
+	height: 38px;
+	border-radius: 10px;
+	background: linear-gradient(90deg, oklch(0.2 0.02 240), oklch(0.24 0.025 240), oklch(0.2 0.02 240));
+	background-size: 200% 100%;
+	animation: shimmer 1.4s infinite linear;
+}
+
+.sidebarFooter {
+	display: grid;
+	gap: 10px;
+	margin-top: auto;
+	padding-top: 14px;
+	border-top: 1px solid var(--border);
+}
+
+.syncStatus {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 0 7px;
+	color: var(--text-sub);
+	font-size: 0.66rem;
+	font-weight: 700;
+}
+
+.syncStatus svg {
+	margin-left: auto;
+	color: oklch(0.7 0.035 230);
+}
+
+.statusDot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--primary);
+	box-shadow: 0 0 0 4px oklch(0.74 0.16 150 / 0.1), 0 0 12px oklch(0.74 0.16 150 / 0.55);
+}
+
+.userCard {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	padding: 10px;
+	border: 1px solid var(--border);
+	border-radius: 13px;
+	background: linear-gradient(145deg, oklch(0.205 0.022 240 / 0.78), oklch(0.16 0.018 240 / 0.8));
+}
+
+.userAvatar,
+.compactAvatar {
+	display: inline-grid;
+	place-items: center;
+	border: 1px solid oklch(0.74 0.16 150 / 0.27);
+	background: linear-gradient(145deg, var(--primary-dim), var(--secondary-dim));
+	color: var(--primary-glow);
+	font-weight: 900;
+	object-fit: cover;
+}
+
+.userAvatar {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	font-size: 0.75rem;
+}
+
+.userCopy {
+	display: grid;
+	min-width: 0;
+}
+
+.userCopy strong {
+	font-size: 0.72rem;
+}
+
+.userCopy span {
+	color: var(--text-sub);
+	font-size: 0.61rem;
+}
+
+.signOutButton {
+	display: inline-grid;
+	width: 31px;
+	height: 31px;
+	place-items: center;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--text-sub);
+	transition: background 160ms ease, color 160ms ease;
+}
+
+.signOutButton:hover:not(:disabled) {
+	background: var(--danger-dim);
+	color: oklch(0.8 0.14 29);
+}
+
+.mainShell {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	min-width: 0;
+}
+
+.topbar {
+	display: flex;
+	position: sticky;
+	top: 0;
+	z-index: 15;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	min-height: 66px;
+	padding: 11px clamp(22px, 3.2vw, 44px);
+	border-bottom: 1px solid oklch(0.31 0.026 240 / 0.72);
+	background: oklch(0.115 0.014 240 / 0.78);
+	backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.contextTrail {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	color: var(--text-sub);
+	font-size: 0.74rem;
+}
+
+.contextTrail svg {
+	flex: 0 0 auto;
+	opacity: 0.6;
+}
+
+.contextTrail strong {
+	overflow: hidden;
+	color: var(--text-main);
+	font-weight: 800;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.topbarActions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.createLink {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	min-height: 36px;
+	padding: 0 11px;
+	border: 1px solid oklch(0.74 0.16 150 / 0.22);
+	border-radius: 9px;
+	background: var(--primary-dim);
+	color: var(--primary-glow);
+	font-size: 0.74rem;
+	font-weight: 800;
+	transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.createLink:hover {
+	border-color: oklch(0.74 0.16 150 / 0.4);
+	background: oklch(0.74 0.16 150 / 0.16);
+	color: var(--text-main);
+}
+
+.topbarAccount {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	max-width: 220px;
+	color: var(--text-sub);
+	font-size: 0.72rem;
+	font-weight: 700;
+}
+
+.topbarAccount > span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.compactAvatar {
+	width: 30px;
+	height: 30px;
+	flex: 0 0 auto;
+	border-radius: 9px;
+	font-size: 0.68rem;
+}
+
+.content {
+	min-width: 0;
+	padding: clamp(26px, 4vw, 52px);
+}
+
+@keyframes shimmer {
+	to { background-position: -200% 0; }
+}
+
+@media (max-width: 980px) {
+	.shell {
+		grid-template-columns: 1fr;
+	}
+
+	.sidebar {
+		position: sticky;
+		height: auto;
+		padding: 10px 14px;
+		border-right: 0;
+		border-bottom: 1px solid var(--border);
+		overflow: visible;
+	}
+
+	.brand {
+		padding: 0 2px 9px;
+	}
+
+	.brandMark {
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+	}
+
+	.navigation {
+		display: flex;
+		gap: 7px;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.navigation::-webkit-scrollbar { display: none; }
+	.navLabel,
+	.workspaceHeading,
+	.sidebarFooter { display: none; }
+
+	.navLink,
+	.workspaceLink {
+		min-height: 38px;
+		flex: 0 0 auto;
+		margin: 0;
+		padding: 6px 9px;
+	}
+
+	.navLink::before,
+	.workspaceLink::before { display: none; }
+	.navIcon { width: 26px; height: 26px; }
+	.workspaceLinks { display: flex; max-height: none; overflow: visible; }
+	.workspaceChevron { display: none; }
+	.workspaceName { max-width: 148px; }
+
+	.topbar {
+		position: static;
+	}
+}
+
+@media (max-width: 640px) {
+	.sidebar {
+		padding: 9px 11px;
+	}
+
+	.brandCopy span { display: none; }
+	.brandCopy strong { font-size: 0.82rem; }
+	.brandMark { width: 34px; height: 34px; }
+
+	.navLink > span:last-child,
+	.workspaceName { font-size: 0.73rem; }
+
+	.workspaceMonogram { width: 24px; height: 24px; }
+
+	.topbar {
+		min-height: 54px;
+		padding: 9px 14px;
+	}
+
+	.contextTrail > span,
+	.contextTrail svg,
+	.createLink span,
+	.topbarAccount > span:last-child { display: none; }
+
+	.content {
+		padding: 22px 14px 38px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.navSkeleton { animation: none; }
+}

@@ -23,10 +23,10 @@ export function ResourceGrid({
 	return (
 		<section className={classNames(styles.grid, className)} {...props}>
 			{isLoading ?
-				<StatusPanel>{loadingMessage}</StatusPanel>
+				<StatusPanel className={styles.state}>{loadingMessage}</StatusPanel>
 			:	null}
 			{!isLoading && isEmpty ?
-				<StatusPanel>{emptyMessage}</StatusPanel>
+				<StatusPanel className={styles.state}>{emptyMessage}</StatusPanel>
 			:	null}
 			{children}
 		</section>
@@ -35,13 +35,15 @@ export function ResourceGrid({
 
 type ResourceCardProps = ComponentPropsWithoutRef<"article"> & {
 	icon: ReactNode;
+	visual?: ReactNode;
 	actions?: ReactNode;
 	message?: ReactNode;
 };
 
-export function ResourceCard({ icon, actions, message, children, className, ...props }: ResourceCardProps) {
+export function ResourceCard({ icon, visual, actions, message, children, className, ...props }: ResourceCardProps) {
 	return (
 		<article className={classNames(styles.card, className)} {...props}>
+			{visual ? <div className={styles.visual}>{visual}</div> : null}
 			<div className={styles.content}>
 				<div className={styles.icon}>{icon}</div>
 				{children}

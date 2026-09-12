@@ -1,0 +1,373 @@
+.page {
+	display: grid;
+	gap: 24px;
+	max-width: 1360px;
+	margin: 0 auto;
+}
+
+.rolePill {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	min-height: 38px;
+	padding: 0 12px;
+	border: 1px solid oklch(0.74 0.16 150 / 0.24);
+	border-radius: 10px;
+	background: var(--primary-dim);
+	color: var(--primary-glow);
+	font-size: 0.76rem;
+	font-weight: 800;
+}
+
+.summary {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 13px;
+}
+
+.summary article {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	min-height: 76px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: 15px;
+	background: linear-gradient(145deg, oklch(0.2 0.022 240 / 0.9), oklch(0.15 0.016 240 / 0.9));
+	box-shadow: 0 10px 24px oklch(0.035 0.015 240 / 0.17);
+}
+
+.summaryIcon {
+	display: inline-grid;
+	width: 38px;
+	height: 38px;
+	flex: 0 0 auto;
+	place-items: center;
+	border: 1px solid oklch(0.67 0.14 240 / 0.21);
+	border-radius: 10px;
+	background: var(--secondary-dim);
+	color: oklch(0.84 0.08 240);
+}
+
+.summary article div {
+	display: grid;
+	min-width: 0;
+}
+
+.summary article strong,
+.summary article span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.summary article strong {
+	font-size: 1.05rem;
+	font-weight: 800;
+	letter-spacing: -0.025em;
+}
+
+.summary article div span {
+	color: var(--text-sub);
+	font-size: 0.67rem;
+	font-weight: 700;
+}
+
+.projectLayout,
+.projectLayoutFull {
+	display: grid;
+	align-items: start;
+	gap: 22px;
+}
+
+.projectLayout {
+	grid-template-columns: minmax(0, 1fr) 338px;
+}
+
+.projectLayoutFull {
+	grid-template-columns: 1fr;
+}
+
+.diagramsSection {
+	display: grid;
+	gap: 17px;
+	min-width: 0;
+}
+
+.sectionHeading {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 18px;
+	padding: 7px 2px 2px;
+}
+
+.sectionHeading > div {
+	display: grid;
+	gap: 4px;
+}
+
+.sectionHeading h2 {
+	font-size: clamp(1.5rem, 2.5vw, 1.95rem);
+	font-weight: 800;
+	letter-spacing: -0.045em;
+}
+
+.sectionHeading p {
+	color: var(--text-sub);
+	font-size: 0.84rem;
+	line-height: 1.55;
+}
+
+.textAction {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	padding: 7px 9px;
+	border-radius: 8px;
+	color: var(--primary-glow);
+	font-size: 0.75rem;
+	font-weight: 800;
+	white-space: nowrap;
+	transition: background 160ms ease, color 160ms ease;
+}
+
+.textAction:hover {
+	background: var(--primary-dim);
+	color: var(--text-main);
+}
+
+.diagramGrid.diagramGrid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+}
+
+.diagramCard.diagramCard {
+	min-height: 352px;
+	padding: 18px;
+	border-radius: 18px;
+	background:
+		linear-gradient(140deg, oklch(0.67 0.14 240 / 0.045), transparent 38%),
+		linear-gradient(145deg, oklch(0.21 0.023 240 / 0.98), oklch(0.15 0.016 240 / 0.98));
+}
+
+.diagramPreview {
+	position: relative;
+	height: 126px;
+	background:
+		linear-gradient(oklch(0.42 0.035 240 / 0.12) 1px, transparent 1px),
+		linear-gradient(90deg, oklch(0.42 0.035 240 / 0.12) 1px, transparent 1px),
+		linear-gradient(145deg, oklch(0.17 0.018 240), oklch(0.125 0.014 240));
+	background-size: 22px 22px, 22px 22px, auto;
+	overflow: hidden;
+}
+
+.diagramPreview::after {
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(circle at 78% 32%, oklch(0.67 0.14 240 / 0.14), transparent 7rem);
+	content: "";
+}
+
+.previewNode {
+	display: inline-grid;
+	position: absolute;
+	z-index: 3;
+	width: 30px;
+	height: 28px;
+	place-items: center;
+	border: 1px solid oklch(0.74 0.16 150 / 0.32);
+	border-radius: 8px;
+	background: linear-gradient(145deg, oklch(0.27 0.03 240), oklch(0.19 0.02 240));
+	box-shadow: 0 8px 18px oklch(0.035 0.015 240 / 0.38);
+	color: var(--primary-glow);
+}
+
+.previewClient { top: 24px; left: 14%; }
+.previewGateway { top: 68px; left: 45%; }
+.previewData { top: 27px; right: 12%; }
+
+.previewEdge {
+	position: absolute;
+	z-index: 2;
+	height: 1.5px;
+	background: linear-gradient(90deg, var(--secondary), var(--primary));
+	box-shadow: 0 0 9px oklch(0.74 0.16 150 / 0.3);
+	transform-origin: left center;
+}
+
+.previewEdgeOne {
+	top: 48px;
+	left: 22%;
+	width: 28%;
+	transform: rotate(19deg);
+}
+
+.previewEdgeTwo {
+	top: 80px;
+	left: 53%;
+	width: 29%;
+	transform: rotate(-22deg);
+}
+
+.previewCursor {
+	position: absolute;
+	right: 25%;
+	bottom: 18px;
+	z-index: 4;
+	width: 8px;
+	height: 8px;
+	border: 2px solid var(--text-main);
+	border-radius: 50%;
+	background: var(--secondary);
+	box-shadow: 0 0 0 5px oklch(0.67 0.14 240 / 0.13);
+}
+
+.diagramMeta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+}
+
+.diagramMeta span {
+	overflow: hidden;
+	color: var(--text-sub);
+	font-size: 0.62rem;
+	font-weight: 700;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.diagramMeta span:first-child {
+	color: oklch(0.82 0.08 240);
+}
+
+.diagramCard h2 {
+	font-size: 1.06rem;
+}
+
+.sideColumn {
+	display: grid;
+	position: sticky;
+	top: 90px;
+	gap: 15px;
+}
+
+.sidePanel.sidePanel {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 20px;
+	padding: 20px;
+	border-radius: 17px;
+	background:
+		linear-gradient(145deg, oklch(0.67 0.14 240 / 0.045), transparent 38%),
+		linear-gradient(145deg, oklch(0.205 0.022 240 / 0.98), oklch(0.155 0.016 240 / 0.98));
+}
+
+#new-diagram {
+	scroll-margin-top: 86px;
+}
+
+.panelHeading {
+	display: flex;
+	align-items: flex-start;
+	gap: 11px;
+}
+
+.panelHeading > div {
+	display: grid;
+	gap: 1px;
+}
+
+.panelHeading h2 {
+	margin-top: 2px;
+	font-size: 0.98rem;
+}
+
+.panelHeading p {
+	margin-top: 3px;
+	font-size: 0.78rem;
+}
+
+.panelIcon {
+	display: inline-grid;
+	width: 38px;
+	height: 38px;
+	flex: 0 0 auto;
+	place-items: center;
+	border: 1px solid oklch(0.74 0.16 150 / 0.23);
+	border-radius: 11px;
+	background: linear-gradient(145deg, var(--primary-dim), var(--secondary-dim));
+	color: var(--primary-glow);
+}
+
+.stackForm {
+	display: grid;
+	gap: 12px;
+}
+
+.stackForm label {
+	min-width: 0;
+}
+
+.stackForm textarea {
+	min-height: 92px;
+}
+
+.stackForm button {
+	width: 100%;
+}
+
+@media (max-width: 1180px) {
+	.summary {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.projectLayout {
+		grid-template-columns: 1fr;
+	}
+
+	.sideColumn {
+		position: static;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 760px) {
+	.diagramGrid.diagramGrid {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 640px) {
+	.page {
+		gap: 18px;
+	}
+
+	.summary {
+		grid-template-columns: 1fr;
+		gap: 9px;
+	}
+
+	.summary article {
+		min-height: 68px;
+		padding: 12px 14px;
+	}
+
+	.sectionHeading {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.sideColumn {
+		grid-template-columns: 1fr;
+	}
+
+	.diagramCard.diagramCard {
+		min-height: 340px;
+		padding: 15px;
+	}
+}

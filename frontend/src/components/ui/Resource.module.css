@@ -4,6 +4,10 @@
 	gap: 18px;
 }
 
+.state {
+	grid-column: 1 / -1;
+}
+
 .card {
 	display: grid;
 	align-content: start;
@@ -42,6 +46,14 @@
 	opacity: 1;
 }
 
+.visual {
+	min-width: 0;
+	margin: -4px -4px 0;
+	border: 1px solid oklch(0.31 0.026 240 / 0.72);
+	border-radius: 13px;
+	overflow: hidden;
+}
+
 .content {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
@@ -71,11 +83,12 @@
 .body h2 {
 	overflow: hidden;
 	color: var(--text-main);
+	display: -webkit-box;
 	font-size: 1.02rem;
 	font-weight: 800;
 	line-height: 1.25;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
 }
 
 .body p {

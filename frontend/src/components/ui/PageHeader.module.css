@@ -1,24 +1,71 @@
 .header {
 	display: flex;
+	position: relative;
 	align-items: flex-end;
 	justify-content: space-between;
-	gap: 24px;
-	padding: 8px 2px 6px;
+	gap: 28px;
+	min-height: 184px;
+	padding: clamp(24px, 3.4vw, 38px);
+	border: 1px solid var(--border);
+	border-radius: 22px;
+	background:
+		linear-gradient(125deg, oklch(0.74 0.16 150 / 0.08), transparent 36%),
+		linear-gradient(305deg, oklch(0.67 0.14 240 / 0.13), transparent 42%),
+		linear-gradient(145deg, oklch(0.205 0.023 240 / 0.98), oklch(0.155 0.017 240 / 0.98));
+	box-shadow: var(--shadow-tight), inset 0 1px 0 oklch(1 0 0 / 0.04);
+	overflow: hidden;
+	isolation: isolate;
+}
+
+.header::before {
+	position: absolute;
+	top: -82px;
+	right: 7%;
+	width: 240px;
+	height: 240px;
+	border: 1px solid oklch(0.67 0.14 240 / 0.18);
+	border-radius: 50%;
+	box-shadow:
+		0 0 0 34px oklch(0.67 0.14 240 / 0.035),
+		0 0 0 72px oklch(0.74 0.16 150 / 0.022);
+	content: "";
+	pointer-events: none;
+}
+
+.header::after {
+	position: absolute;
+	right: 18%;
+	bottom: -31px;
+	width: 118px;
+	height: 76px;
+	background-image: radial-gradient(circle, oklch(0.82 0.14 150 / 0.22) 1px, transparent 1.5px);
+	background-size: 12px 12px;
+	content: "";
+	opacity: 0.62;
+	pointer-events: none;
+	transform: rotate(-8deg);
+}
+
+.titleStack,
+.actions {
+	position: relative;
+	z-index: 1;
 }
 
 .titleStack {
 	display: grid;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
 .titleStack h1 {
 	overflow: hidden;
+	max-width: 18ch;
 	color: var(--text-main);
-	font-size: clamp(1.75rem, 3vw, 2.35rem);
+	font-size: clamp(2rem, 3.5vw, 3rem);
 	font-weight: 800;
-	line-height: 1.08;
-	letter-spacing: -0.045em;
+	line-height: 1.02;
+	letter-spacing: -0.055em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
@@ -27,7 +74,7 @@
 	max-width: 62ch;
 	color: var(--text-sub);
 	font-size: 0.94rem;
-	line-height: 1.6;
+	line-height: 1.65;
 }
 
 .actions {
@@ -36,17 +83,38 @@
 	justify-content: flex-end;
 	flex-wrap: wrap;
 	gap: 8px;
-	padding-bottom: 3px;
 	min-width: 0;
+	padding-bottom: 2px;
 }
 
 @media (max-width: 780px) {
 	.header {
 		align-items: stretch;
+		min-height: 0;
 		flex-direction: column;
+		padding: 24px;
+	}
+
+	.header::before {
+		right: -80px;
+	}
+
+	.titleStack h1 {
+		white-space: normal;
 	}
 
 	.actions {
 		justify-content: flex-start;
+	}
+}
+
+@media (max-width: 520px) {
+	.header {
+		padding: 21px 19px;
+		border-radius: 17px;
+	}
+
+	.titleStack h1 {
+		font-size: 1.85rem;
 	}
 }
