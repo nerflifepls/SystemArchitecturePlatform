@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { NodeChange } from "@xyflow/react";
+import type { NodeChange, ReactFlowInstance } from "@xyflow/react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import * as Y from "yjs";
 
@@ -14,6 +15,8 @@ const canvasProbe = vi.hoisted(() => ({
 	selectionHandlers: new Set<unknown>(),
 	latestNodes: [] as DiagramNode[],
 	onNodesChange: undefined as undefined | ((changes: NodeChange<DiagramNode>[]) => void),
+	onInit: undefined as undefined | ((instance: ReactFlowInstance<DiagramNode>) => void),
+	onPointerMove: undefined as undefined | ((event: ReactPointerEvent<HTMLDivElement>) => void),
 }));
 
 vi.mock("../api/endpoints", () => ({
@@ -61,17 +64,23 @@ vi.mock("../components/editor/DiagramCanvas", async () => {
 	return {
 		DiagramCanvas: ({
 			nodes,
+			onInit,
 			onNodesChange,
+			onPointerMove,
 			onSelectionChange,
 		}: {
 			nodes: DiagramNode[];
+			onInit: (instance: ReactFlowInstance<DiagramNode>) => void;
 			onNodesChange: (changes: NodeChange<DiagramNode>[]) => void;
+			onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
 			onSelectionChange: (selection: { nodes: never[]; edges: never[] }) => void;
 		}) => {
 			canvasProbe.renderCount += 1;
 			canvasProbe.selectionHandlers.add(onSelectionChange);
 			canvasProbe.latestNodes = nodes;
+			canvasProbe.onInit = onInit;
 			canvasProbe.onNodesChange = onNodesChange;
+			canvasProbe.onPointerMove = onPointerMove;
 			React.useEffect(() => {
 				onSelectionChange({ nodes: [], edges: [] });
 			}, [onSelectionChange]);
@@ -89,6 +98,7 @@ class IdleWebSocket {
 
 	readyState: number = IdleWebSocket.CONNECTING;
 	binaryType: BinaryType = "blob";
+	sent: unknown[] = [];
 	private listeners = new Map<string, Set<(event: { data?: unknown }) => void>>();
 
 	constructor() {
@@ -100,7 +110,9 @@ class IdleWebSocket {
 		listeners.add(listener);
 		this.listeners.set(type, listeners);
 	}
-	send() {}
+	send(data: unknown) {
+		this.sent.push(data);
+	}
 	close() {
 		this.readyState = IdleWebSocket.CLOSED;
 	}
@@ -117,7 +129,9 @@ describe("DiagramEditorPage integration", () => {
 		canvasProbe.renderCount = 0;
 		canvasProbe.selectionHandlers.clear();
 		canvasProbe.latestNodes = [];
+		canvasProbe.onInit = undefined;
 		canvasProbe.onNodesChange = undefined;
+		canvasProbe.onPointerMove = undefined;
 		localStorage.clear();
 		vi.clearAllMocks();
 		vi.stubGlobal("WebSocket", IdleWebSocket);
@@ -153,6 +167,58 @@ describe("DiagramEditorPage integration", () => {
 		expect(screen.getByTestId("diagram-canvas")).toBeInTheDocument();
 		await waitFor(() => expect(canvasProbe.renderCount).toBeGreaterThan(1));
 		expect(canvasProbe.selectionHandlers.size).toBe(1);
+	});
+
+	it("broadcasts the latest cursor position once per animation frame", async () => {
+		let pendingFrame: FrameRequestCallback | null = null;
+		const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+			pendingFrame = callback;
+			return 7;
+		});
+		vi.stubGlobal("requestAnimationFrame", requestAnimationFrame);
+		vi.stubGlobal("cancelAnimationFrame", vi.fn());
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter
+					initialEntries={[
+						"/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor",
+					]}
+				>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() => expect(IdleWebSocket.instances).toHaveLength(1));
+		const websocket = IdleWebSocket.instances[0];
+		act(() => {
+			canvasProbe.onInit?.({
+				screenToFlowPosition: ({ x, y }: { x: number; y: number }) => ({ x: x / 2, y: y / 2 }),
+			} as ReactFlowInstance<DiagramNode>);
+			websocket.emit("open");
+		});
+		const messagesBeforeMovement = websocket.sent.length;
+
+		act(() => {
+			canvasProbe.onPointerMove?.({ clientX: 20, clientY: 40 } as ReactPointerEvent<HTMLDivElement>);
+			canvasProbe.onPointerMove?.({ clientX: 42, clientY: 86 } as ReactPointerEvent<HTMLDivElement>);
+		});
+
+		expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+		expect(websocket.sent).toHaveLength(messagesBeforeMovement);
+		act(() => pendingFrame?.(16));
+
+		expect(websocket.sent).toHaveLength(messagesBeforeMovement + 1);
+		expect(JSON.parse(websocket.sent.at(-1) as string).presence.cursor).toEqual({ x: 21, y: 43 });
 	});
 
 	it("does not apply content mutations to a viewer's local document", async () => {
