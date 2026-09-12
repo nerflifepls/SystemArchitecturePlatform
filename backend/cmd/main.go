@@ -28,7 +28,7 @@ func main() {
 	bootstrapCtx := context.Background()
 	repository, closeDatabase := connectDatabase(bootstrapCtx, appConfig.DatabaseURL)
 	defer closeDatabase()
-	sessionStore, closeRedis := connectRedis(bootstrapCtx, appConfig.RedisAddr, appConfig.SessionTTL)
+	sessionStore, eventPublisher, closeRedis := connectRedis(bootstrapCtx, appConfig.RedisAddr, appConfig.SessionTTL)
 	defer closeRedis()
 
 	var userRepository services.UserRepository
@@ -43,9 +43,9 @@ func main() {
 	}
 
 	authService := services.NewAuthService(userRepository, sessionStore, services.NewGoogleVerifier(), appConfig.GoogleClientID, appConfig.SessionTTL)
-	workspaceService := services.NewWorkspaceService(workspaceRepository, userRepository)
-	projectService := services.NewProjectService(projectRepository, workspaceRepository)
-	diagramService := services.NewDiagramService(diagramRepository, projectRepository, workspaceRepository)
+	workspaceService := services.NewWorkspaceService(workspaceRepository, userRepository, eventPublisher)
+	projectService := services.NewProjectService(projectRepository, workspaceRepository, eventPublisher)
+	diagramService := services.NewDiagramService(diagramRepository, projectRepository, workspaceRepository, eventPublisher)
 
 	server := &http.Server{
 		Addr:         ":" + appConfig.Port,
@@ -107,10 +107,10 @@ func connectDatabase(ctx context.Context, databaseURL string) (*postgre.Reposito
 	return postgre.NewRepository(pool), pool.Close
 }
 
-func connectRedis(ctx context.Context, redisAddr string, sessionTTL time.Duration) (services.SessionStore, func()) {
+func connectRedis(ctx context.Context, redisAddr string, sessionTTL time.Duration) (services.SessionStore, services.LiveEventPublisher, func()) {
 	if redisAddr == "" {
 		log.Print("REDIS_ADDR is not set; session-backed endpoints will return 503")
-		return nil, func() {}
+		return nil, nil, func() {}
 	}
 	client := goredis.NewClient(&goredis.Options{Addr: redisAddr})
 	connectCtx, cancelConnect := context.WithTimeout(ctx, 5*time.Second)
@@ -118,8 +118,8 @@ func connectRedis(ctx context.Context, redisAddr string, sessionTTL time.Duratio
 	if pingErr := client.Ping(connectCtx).Err(); pingErr != nil {
 		_ = client.Close()
 		log.Printf("ping Redis failed: %v; session-backed endpoints will return 503", pingErr)
-		return nil, func() {}
+		return nil, nil, func() {}
 	}
 	log.Print("connected to Redis")
-	return rediscache.NewSessionStore(client, sessionTTL), func() { _ = client.Close() }
+	return rediscache.NewSessionStore(client, sessionTTL), rediscache.NewEventPublisher(client, log.Default()), func() { _ = client.Close() }
 }

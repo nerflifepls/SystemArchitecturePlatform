@@ -20,16 +20,18 @@ type Handler struct {
 	sessions *session.Store
 	authz    *authz.Client
 	hub      *Hub
+	events   *EventHub
 	logger   *log.Logger
 	upgrader websocket.Upgrader
 }
 
-func NewHandler(appConfig config.Config, sessions *session.Store, authzClient *authz.Client, hub *Hub, logger *log.Logger) *Handler {
+func NewHandler(appConfig config.Config, sessions *session.Store, authzClient *authz.Client, hub *Hub, eventHub *EventHub, logger *log.Logger) *Handler {
 	return &Handler{
 		config:   appConfig,
 		sessions: sessions,
 		authz:    authzClient,
 		hub:      hub,
+		events:   eventHub,
 		logger:   logger,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  4096,
@@ -52,12 +54,6 @@ func (handler *Handler) ServeWS(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	diagramID, diagramErr := parseDiagramID(request)
-	if diagramErr != nil {
-		http.Error(writer, "diagramId is required and must be a valid UUID", http.StatusBadRequest)
-		return
-	}
-
 	cookie, cookieErr := request.Cookie(handler.config.SessionCookieName)
 	if cookieErr != nil || strings.TrimSpace(cookie.Value) == "" {
 		http.Error(writer, "session cookie is required", http.StatusUnauthorized)
@@ -71,6 +67,17 @@ func (handler *Handler) ServeWS(writer http.ResponseWriter, request *http.Reques
 			return
 		}
 		http.Error(writer, "session validation is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	if strings.EqualFold(strings.TrimSpace(request.URL.Query().Get("scope")), "user") {
+		handler.serveUserEvents(writer, request, userSession)
+		return
+	}
+
+	diagramID, diagramErr := parseDiagramID(request)
+	if diagramErr != nil {
+		http.Error(writer, "diagramId is required and must be a valid UUID", http.StatusBadRequest)
 		return
 	}
 
@@ -98,7 +105,17 @@ func (handler *Handler) ServeWS(writer http.ResponseWriter, request *http.Reques
 	}
 
 	connectionID := uuid.NewString()
-	connection := newConnection(connectionID, diagramID.String(), authorization.Role, userSession, websocketConn, handler.hub, handler.logger)
+	connection := newConnection(
+		connectionID,
+		diagramID.String(),
+		authorization.Diagram.ProjectID,
+		authorization.Diagram.WorkspaceID,
+		authorization.Role,
+		userSession,
+		websocketConn,
+		handler.hub,
+		handler.logger,
+	)
 	if registerErr := handler.hub.Register(request.Context(), connection); registerErr != nil {
 		if handler.logger != nil {
 			handler.logger.Printf("register websocket connection %s: %v", connectionID, registerErr)
@@ -111,6 +128,32 @@ func (handler *Handler) ServeWS(writer http.ResponseWriter, request *http.Reques
 	go connection.writePump()
 	connection.sendReady()
 	handler.hub.SendPresenceSnapshot(request.Context(), connection)
+	connection.readPump(request.Context())
+}
+
+func (handler *Handler) serveUserEvents(writer http.ResponseWriter, request *http.Request, userSession session.Session) {
+	if handler.events == nil {
+		http.Error(writer, "user events are unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	websocketConn, upgradeErr := handler.upgrader.Upgrade(writer, request, nil)
+	if upgradeErr != nil {
+		if handler.logger != nil {
+			handler.logger.Printf("upgrade user events websocket: %v", upgradeErr)
+		}
+		return
+	}
+
+	connection := newEventConnection(uuid.NewString(), userSession, websocketConn, handler.events)
+	if registerErr := handler.events.Register(request.Context(), connection); registerErr != nil {
+		_ = websocketConn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "realtime state unavailable"), time.Now().Add(writeWait))
+		_ = websocketConn.Close()
+		return
+	}
+
+	go connection.writePump()
+	connection.sendReady()
 	connection.readPump(request.Context())
 }
 

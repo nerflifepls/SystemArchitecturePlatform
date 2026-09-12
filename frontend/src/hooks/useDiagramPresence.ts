@@ -1,5 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { DiagramDto } from "../api/types";
+import { useLiveEvents } from "../live/LiveEventsProvider";
 import {
 	buildLiveWsUrl,
 	createVibrantCursorColor,
@@ -11,6 +14,8 @@ import {
 type PresenceStatus = "loading" | "live" | "offline" | "error";
 
 export function useDiagramPresence(diagramId: string, scope: "overview" | "editor") {
+	const queryClient = useQueryClient();
+	const { applyRoleChange, reportAccessLoss } = useLiveEvents();
 	const clientIdRef = useRef(crypto.randomUUID());
 	const cursorColorRef = useRef(createVibrantCursorColor());
 	const [status, setStatus] = useState<PresenceStatus>("loading");
@@ -77,7 +82,39 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 				return;
 			}
 
+			if (frame.type === "access:changed" && frame.role && frame.workspaceId) {
+				applyRoleChange({
+					workspaceId: frame.workspaceId,
+					projectId: frame.projectId,
+					diagramId: frame.diagramId ?? diagramId,
+					role: frame.role,
+				});
+				return;
+			}
+
+			if (frame.type === "access:revoked" && frame.workspaceId) {
+				const reason =
+					frame.reason === "workspace_deleted" ||
+					frame.reason === "project_deleted" ||
+					frame.reason === "diagram_deleted" ||
+					frame.reason === "authorization_revoked" ?
+						frame.reason
+					: "membership_removed";
+				reportAccessLoss({
+					reason,
+					workspaceId: frame.workspaceId,
+					projectId: frame.projectId,
+					diagramId: frame.diagramId ?? diagramId,
+				});
+				return;
+			}
+
 			if (frame.type === "ready" && frame.connectionId) {
+				if (frame.role) {
+					queryClient.setQueryData<DiagramDto>(["diagram", diagramId], (current) =>
+						current ? { ...current, role: frame.role } : current,
+					);
+				}
 				setConnectionId(frame.connectionId);
 				return;
 			}
@@ -112,7 +149,7 @@ export function useDiagramPresence(diagramId: string, scope: "overview" | "edito
 			isCurrent = false;
 			websocket.close();
 		};
-	}, [diagramId, scope]);
+	}, [applyRoleChange, diagramId, queryClient, reportAccessLoss, scope]);
 
 	return useMemo(
 		() => ({ status, lastError, connectionId, connections }),

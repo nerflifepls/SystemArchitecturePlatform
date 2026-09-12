@@ -17,6 +17,8 @@ func TestRedisKeys(t *testing.T) {
 		{name: "active users", got: diagramActiveUsersKey(diagramID), want: "diagram:diagram-1:active_users"},
 		{name: "updates channel", got: diagramUpdatesChannel(diagramID), want: "pubsub:diagram:diagram-1:updates"},
 		{name: "presence channel", got: diagramPresenceChannel(diagramID), want: "pubsub:diagram:diagram-1:presence"},
+		{name: "user events channel", got: userEventsChannel("user-1"), want: "pubsub:user:user-1:events"},
+		{name: "workspace events channel", got: workspaceEventsChannel("workspace-1"), want: "pubsub:workspace:workspace-1:events"},
 	}
 
 	for _, test := range tests {

@@ -6,6 +6,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// LiveEvent is a lightweight invalidation message published after a successful
+// domain mutation. Clients use the resource identifiers to refetch authoritative
+// data rather than trusting state carried over the realtime channel.
+type LiveEvent struct {
+	ID              uuid.UUID  `json:"id"`
+	Type            string     `json:"type"`
+	OccurredAt      time.Time  `json:"occurredAt"`
+	ActorUserID     uuid.UUID  `json:"actorUserId"`
+	WorkspaceID     *uuid.UUID `json:"workspaceId,omitempty"`
+	ProjectID       *uuid.UUID `json:"projectId,omitempty"`
+	DiagramID       *uuid.UUID `json:"diagramId,omitempty"`
+	SubjectUserID   *uuid.UUID `json:"subjectUserId,omitempty"`
+	Role            Role       `json:"role,omitempty"`
+	SnapshotVersion int64      `json:"snapshotVersion,omitempty"`
+}
+
 type Role string
 
 const (

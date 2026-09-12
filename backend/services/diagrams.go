@@ -37,10 +37,11 @@ type DiagramService struct {
 	diagrams   DiagramRepository
 	projects   ProjectRepository
 	workspaces WorkspaceRepository
+	events     LiveEventPublisher
 }
 
-func NewDiagramService(diagrams DiagramRepository, projects ProjectRepository, workspaces WorkspaceRepository) *DiagramService {
-	return &DiagramService{diagrams: diagrams, projects: projects, workspaces: workspaces}
+func NewDiagramService(diagrams DiagramRepository, projects ProjectRepository, workspaces WorkspaceRepository, events LiveEventPublisher) *DiagramService {
+	return &DiagramService{diagrams: diagrams, projects: projects, workspaces: workspaces, events: events}
 }
 
 func (service *DiagramService) ListDiagrams(ctx context.Context, actorUserID uuid.UUID, projectID uuid.UUID, limit int, cursor string) ([]domain.Diagram, string, error) {
@@ -56,7 +57,7 @@ func (service *DiagramService) ListDiagrams(ctx context.Context, actorUserID uui
 }
 
 func (service *DiagramService) CreateDiagram(ctx context.Context, actorUserID uuid.UUID, projectID uuid.UUID, title string) (domain.Diagram, error) {
-	_, role, accessErr := service.requireProjectAccess(ctx, actorUserID, projectID)
+	project, role, accessErr := service.requireProjectAccess(ctx, actorUserID, projectID)
 	if accessErr != nil {
 		return domain.Diagram{}, accessErr
 	}
@@ -71,6 +72,7 @@ func (service *DiagramService) CreateDiagram(ctx context.Context, actorUserID uu
 	if createErr != nil {
 		return domain.Diagram{}, mapRepositoryError(createErr, "diagram")
 	}
+	service.publishDiagramEvent(ctx, EventDiagramCreated, actorUserID, project.WorkspaceID, projectID, diagram.ID, 0)
 	return diagram, nil
 }
 
@@ -83,7 +85,7 @@ func (service *DiagramService) GetDiagram(ctx context.Context, actorUserID uuid.
 }
 
 func (service *DiagramService) UpdateDiagram(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, title string) (domain.Diagram, error) {
-	_, role, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
+	existingDiagram, role, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
 	if accessErr != nil {
 		return domain.Diagram{}, accessErr
 	}
@@ -98,11 +100,12 @@ func (service *DiagramService) UpdateDiagram(ctx context.Context, actorUserID uu
 	if updateErr != nil {
 		return domain.Diagram{}, mapRepositoryError(updateErr, "diagram")
 	}
+	service.publishDiagramEventForProject(ctx, EventDiagramUpdated, actorUserID, existingDiagram.ProjectID, diagramID, 0)
 	return diagram, nil
 }
 
 func (service *DiagramService) DeleteDiagram(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID) error {
-	_, role, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
+	diagram, role, accessErr := service.requireDiagramAccess(ctx, actorUserID, diagramID)
 	if accessErr != nil {
 		return accessErr
 	}
@@ -112,6 +115,7 @@ func (service *DiagramService) DeleteDiagram(ctx context.Context, actorUserID uu
 	if deleteErr := service.diagrams.DeleteDiagram(ctx, diagramID); deleteErr != nil {
 		return mapRepositoryError(deleteErr, "diagram")
 	}
+	service.publishDiagramEventForProject(ctx, EventDiagramDeleted, actorUserID, diagram.ProjectID, diagramID, 0)
 	return nil
 }
 
@@ -159,7 +163,42 @@ func (service *DiagramService) SaveSnapshot(ctx context.Context, actorUserID uui
 		}
 		return SnapshotSaveResult{}, mapRepositoryError(saveErr, "diagram snapshot")
 	}
+	service.publishDiagramEventForProject(ctx, EventDiagramSnapshotSaved, actorUserID, diagram.ProjectID, diagramID, updatedDiagram.SnapshotVersion)
 	return SnapshotSaveResult{SnapshotVersion: updatedDiagram.SnapshotVersion, LastUpdateSeq: updatedDiagram.LastUpdateSeq, SavedAt: updatedDiagram.UpdatedAt}, nil
+}
+
+func (service *DiagramService) publishDiagramEventForProject(
+	ctx context.Context,
+	eventType string,
+	actorUserID uuid.UUID,
+	projectID uuid.UUID,
+	diagramID uuid.UUID,
+	snapshotVersion int64,
+) {
+	if service.events == nil || service.projects == nil {
+		return
+	}
+	project, projectErr := service.projects.GetProjectByID(ctx, projectID)
+	if projectErr != nil {
+		return
+	}
+	service.publishDiagramEvent(ctx, eventType, actorUserID, project.WorkspaceID, projectID, diagramID, snapshotVersion)
+}
+
+func (service *DiagramService) publishDiagramEvent(
+	ctx context.Context,
+	eventType string,
+	actorUserID uuid.UUID,
+	workspaceID uuid.UUID,
+	projectID uuid.UUID,
+	diagramID uuid.UUID,
+	snapshotVersion int64,
+) {
+	event := newLiveEvent(eventType, actorUserID, &workspaceID)
+	event.ProjectID = &projectID
+	event.DiagramID = &diagramID
+	event.SnapshotVersion = snapshotVersion
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, workspaceID, event, actorUserID)
 }
 
 func (service *DiagramService) ListSnapshots(ctx context.Context, actorUserID uuid.UUID, diagramID uuid.UUID, limit int) ([]domain.DiagramSnapshot, error) {

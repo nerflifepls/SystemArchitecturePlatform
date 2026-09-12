@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
+	"liveeventsservice/internal/session"
+
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -32,7 +35,7 @@ func TestCanEditRole(t *testing.T) {
 
 func TestHandleBinaryRejectsViewerBeforeBroadcast(t *testing.T) {
 	connection := &Connection{
-		Role: "viewer",
+		role: "viewer",
 		send: make(chan outboundMessage, 1),
 	}
 
@@ -52,5 +55,28 @@ func TestHandleBinaryRejectsViewerBeforeBroadcast(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected viewer rejection message")
+	}
+}
+
+func TestReadyFrameIncludesAuthorizedResourceAncestry(t *testing.T) {
+	userID := uuid.New()
+	connection := &Connection{
+		ID:          "connection-1",
+		DiagramID:   "diagram-1",
+		ProjectID:   "project-1",
+		WorkspaceID: "workspace-1",
+		Session:     session.Session{UserID: userID},
+		role:        "viewer",
+		send:        make(chan outboundMessage, 1),
+	}
+
+	connection.sendReady()
+	message := <-connection.send
+	var ready readyMessage
+	if decodeErr := json.Unmarshal(message.payload, &ready); decodeErr != nil {
+		t.Fatalf("decode ready frame: %v", decodeErr)
+	}
+	if ready.DiagramID != "diagram-1" || ready.ProjectID != "project-1" || ready.WorkspaceID != "workspace-1" || ready.Role != "viewer" {
+		t.Fatalf("unexpected ready frame: %+v", ready)
 	}
 }

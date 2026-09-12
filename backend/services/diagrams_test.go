@@ -49,10 +49,25 @@ func (stub *projectRepositoryStub) GetProjectByID(context.Context, uuid.UUID) (d
 type workspaceRepositoryStub struct {
 	WorkspaceRepository
 	workspace domain.WorkspaceWithRole
+	members   []domain.WorkspaceMember
 }
 
 func (stub *workspaceRepositoryStub) GetWorkspaceForUser(context.Context, uuid.UUID, uuid.UUID) (domain.WorkspaceWithRole, error) {
 	return stub.workspace, nil
+}
+
+func (stub *workspaceRepositoryStub) ListWorkspaceMembers(context.Context, uuid.UUID) ([]domain.WorkspaceMember, error) {
+	return stub.members, nil
+}
+
+type liveEventPublisherStub struct {
+	recipients []uuid.UUID
+	event      domain.LiveEvent
+}
+
+func (stub *liveEventPublisherStub) Publish(_ context.Context, recipients []uuid.UUID, event domain.LiveEvent) {
+	stub.recipients = append([]uuid.UUID(nil), recipients...)
+	stub.event = event
 }
 
 func newDiagramServiceForTest(role domain.Role) (*DiagramService, *diagramRepositoryStub, uuid.UUID, uuid.UUID) {
@@ -68,7 +83,7 @@ func newDiagramServiceForTest(role domain.Role) (*DiagramService, *diagramReposi
 	}}
 	projects := &projectRepositoryStub{project: domain.Project{ID: projectID, WorkspaceID: workspaceID}}
 	workspaces := &workspaceRepositoryStub{workspace: domain.WorkspaceWithRole{ID: workspaceID, Role: role}}
-	return NewDiagramService(diagrams, projects, workspaces), diagrams, diagramID, uuid.New()
+	return NewDiagramService(diagrams, projects, workspaces, nil), diagrams, diagramID, uuid.New()
 }
 
 func TestSaveSnapshotRecordsNormalizedMetadata(t *testing.T) {
@@ -82,6 +97,41 @@ func TestSaveSnapshotRecordsNormalizedMetadata(t *testing.T) {
 	}
 	if result.SnapshotVersion != 4 || result.LastUpdateSeq != 9 {
 		t.Fatalf("unexpected save result: %+v", result)
+	}
+}
+
+func TestSaveSnapshotPublishesWorkspaceInvalidation(t *testing.T) {
+	service, _, diagramID, actorID := newDiagramServiceForTest(domain.RoleEditor)
+	otherMemberID := uuid.New()
+	service.workspaces.(*workspaceRepositoryStub).members = []domain.WorkspaceMember{
+		{User: domain.User{ID: otherMemberID}},
+	}
+	publisher := &liveEventPublisherStub{}
+	service.events = publisher
+
+	result, saveErr := service.SaveSnapshot(context.Background(), actorID, diagramID, 9, []byte{1}, "", "automatic")
+	if saveErr != nil {
+		t.Fatalf("SaveSnapshot returned error: %v", saveErr)
+	}
+	project := service.projects.(*projectRepositoryStub).project
+	if publisher.event.Type != EventDiagramSnapshotSaved || publisher.event.DiagramID == nil || *publisher.event.DiagramID != diagramID {
+		t.Fatalf("unexpected event: %+v", publisher.event)
+	}
+	if publisher.event.ProjectID == nil || *publisher.event.ProjectID != project.ID || publisher.event.WorkspaceID == nil || *publisher.event.WorkspaceID != project.WorkspaceID {
+		t.Fatalf("event resource ancestry is incomplete: %+v", publisher.event)
+	}
+	if publisher.event.SnapshotVersion != result.SnapshotVersion {
+		t.Fatalf("event snapshot version = %d, want %d", publisher.event.SnapshotVersion, result.SnapshotVersion)
+	}
+	recipientSet := make(map[uuid.UUID]struct{}, len(publisher.recipients))
+	for _, recipient := range publisher.recipients {
+		recipientSet[recipient] = struct{}{}
+	}
+	if _, exists := recipientSet[actorID]; !exists {
+		t.Fatal("event did not include the actor")
+	}
+	if _, exists := recipientSet[otherMemberID]; !exists {
+		t.Fatal("event did not include another workspace member")
 	}
 }
 

@@ -22,14 +22,16 @@ const (
 type outboundMessage struct {
 	messageType int
 	payload     []byte
+	closeAfter  bool
 }
 
 // Connection owns websocket read/write loops for one diagram session.
 type Connection struct {
-	ID        string
-	DiagramID string
-	Role      string
-	Session   session.Session
+	ID          string
+	DiagramID   string
+	ProjectID   string
+	WorkspaceID string
+	Session     session.Session
 
 	hub       *Hub
 	websocket *websocket.Conn
@@ -37,22 +39,55 @@ type Connection struct {
 	done      chan struct{}
 	logger    *log.Logger
 
-	sendMu sync.RWMutex
-	closed bool
+	sendMu  sync.RWMutex
+	closed  bool
+	roleMu  sync.RWMutex
+	role    string
+	revoked bool
+
+	// authorizationMu orders periodic backend reauthorization with Redis role
+	// events so an older in-flight authorization result cannot overwrite a newer
+	// permission change.
+	authorizationMu sync.Mutex
 }
 
-func newConnection(id string, diagramID string, role string, userSession session.Session, ws *websocket.Conn, hub *Hub, logger *log.Logger) *Connection {
+func newConnection(id string, diagramID string, projectID string, workspaceID string, role string, userSession session.Session, ws *websocket.Conn, hub *Hub, logger *log.Logger) *Connection {
 	return &Connection{
-		ID:        id,
-		DiagramID: diagramID,
-		Role:      role,
-		Session:   userSession,
-		hub:       hub,
-		websocket: ws,
-		send:      make(chan outboundMessage, 64),
-		done:      make(chan struct{}),
-		logger:    logger,
+		ID:          id,
+		DiagramID:   diagramID,
+		ProjectID:   projectID,
+		WorkspaceID: workspaceID,
+		Session:     userSession,
+		role:        role,
+		hub:         hub,
+		websocket:   ws,
+		send:        make(chan outboundMessage, 64),
+		done:        make(chan struct{}),
+		logger:      logger,
 	}
+}
+
+func (connection *Connection) currentRole() string {
+	connection.roleMu.RLock()
+	defer connection.roleMu.RUnlock()
+	return connection.role
+}
+
+func (connection *Connection) setRole(role string) bool {
+	connection.roleMu.Lock()
+	defer connection.roleMu.Unlock()
+	if connection.revoked {
+		return false
+	}
+	connection.role = role
+	return true
+}
+
+func (connection *Connection) revokeAccess() {
+	connection.roleMu.Lock()
+	connection.role = ""
+	connection.revoked = true
+	connection.roleMu.Unlock()
 }
 
 func canEditRole(role string) bool {
@@ -149,6 +184,14 @@ func (connection *Connection) writePump() {
 			if closeErr := writer.Close(); closeErr != nil {
 				return
 			}
+			if message.closeAfter {
+				_ = connection.websocket.WriteControl(
+					websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "access revoked"),
+					time.Now().Add(writeWait),
+				)
+				return
+			}
 		case <-ticker.C:
 			_ = connection.websocket.SetWriteDeadline(time.Now().Add(writeWait))
 			if pingErr := connection.websocket.WriteMessage(websocket.PingMessage, nil); pingErr != nil {
@@ -165,8 +208,10 @@ func (connection *Connection) sendReady() {
 			Type:         "ready",
 			ConnectionID: connection.ID,
 			DiagramID:    connection.DiagramID,
+			ProjectID:    connection.ProjectID,
+			WorkspaceID:  connection.WorkspaceID,
 			UserID:       connection.Session.UserID.String(),
-			Role:         connection.Role,
+			Role:         connection.currentRole(),
 		}),
 	})
 }

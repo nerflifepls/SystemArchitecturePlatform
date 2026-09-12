@@ -52,7 +52,17 @@ export function buildLiveWsUrl(diagramId: string) {
 	}
 
 	const url = new URL(configured, window.location.href);
+	url.searchParams.delete("scope");
 	url.searchParams.set("diagramId", diagramId);
+	return url.toString();
+}
+
+export function buildUserEventsWsUrl() {
+	const configured = import.meta.env.VITE_LIVE_WS_URL?.trim() || "ws://localhost:8080/ws";
+	const withoutTemplate = configured.replace("{diagramId}", "");
+	const url = new URL(withoutTemplate, window.location.href);
+	url.searchParams.delete("diagramId");
+	url.searchParams.set("scope", "user");
 	return url.toString();
 }
 

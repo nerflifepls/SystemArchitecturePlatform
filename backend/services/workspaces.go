@@ -26,10 +26,11 @@ type WorkspaceRepository interface {
 type WorkspaceService struct {
 	workspaces WorkspaceRepository
 	users      UserRepository
+	events     LiveEventPublisher
 }
 
-func NewWorkspaceService(workspaces WorkspaceRepository, users UserRepository) *WorkspaceService {
-	return &WorkspaceService{workspaces: workspaces, users: users}
+func NewWorkspaceService(workspaces WorkspaceRepository, users UserRepository, events LiveEventPublisher) *WorkspaceService {
+	return &WorkspaceService{workspaces: workspaces, users: users, events: events}
 }
 
 func (service *WorkspaceService) ListWorkspaces(ctx context.Context, actorUserID uuid.UUID, limit int, cursor string) ([]domain.WorkspaceWithRole, string, error) {
@@ -55,6 +56,8 @@ func (service *WorkspaceService) CreateWorkspace(ctx context.Context, actorUserI
 	if createErr != nil {
 		return domain.WorkspaceWithRole{}, mapRepositoryError(createErr, "workspace")
 	}
+	event := newLiveEvent(EventWorkspaceCreated, actorUserID, &workspace.ID)
+	service.eventsPublish(ctx, []uuid.UUID{actorUserID}, event)
 	return workspace, nil
 }
 
@@ -82,7 +85,10 @@ func (service *WorkspaceService) UpdateWorkspace(ctx context.Context, actorUserI
 	if updateErr != nil {
 		return domain.WorkspaceWithRole{}, mapRepositoryError(updateErr, "workspace")
 	}
-	return domain.WorkspaceWithRole{ID: updatedWorkspace.ID, Name: updatedWorkspace.Name, Role: workspace.Role, CreatedAt: updatedWorkspace.CreatedAt, UpdatedAt: updatedWorkspace.UpdatedAt}, nil
+	result := domain.WorkspaceWithRole{ID: updatedWorkspace.ID, Name: updatedWorkspace.Name, Role: workspace.Role, CreatedAt: updatedWorkspace.CreatedAt, UpdatedAt: updatedWorkspace.UpdatedAt}
+	event := newLiveEvent(EventWorkspaceUpdated, actorUserID, &workspaceID)
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, workspaceID, event, actorUserID)
+	return result, nil
 }
 
 func (service *WorkspaceService) DeleteWorkspace(ctx context.Context, actorUserID uuid.UUID, workspaceID uuid.UUID) error {
@@ -93,9 +99,12 @@ func (service *WorkspaceService) DeleteWorkspace(ctx context.Context, actorUserI
 	if workspace.Role != domain.RoleOwner {
 		return Forbidden("owner role is required")
 	}
+	members, _ := service.workspaces.ListWorkspaceMembers(ctx, workspaceID)
 	if deleteErr := service.workspaces.DeleteWorkspace(ctx, workspaceID); deleteErr != nil {
 		return mapRepositoryError(deleteErr, "workspace")
 	}
+	event := newLiveEvent(EventWorkspaceDeleted, actorUserID, &workspaceID)
+	service.eventsPublish(ctx, memberUserIDs(members, actorUserID), event)
 	return nil
 }
 
@@ -136,6 +145,10 @@ func (service *WorkspaceService) AddMember(ctx context.Context, actorUserID uuid
 	if addErr != nil {
 		return domain.WorkspaceMember{}, mapRepositoryError(addErr, "workspace member")
 	}
+	event := newLiveEvent(EventWorkspaceMemberAdded, actorUserID, &workspaceID)
+	event.SubjectUserID = &targetUser.ID
+	event.Role = role
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, workspaceID, event, actorUserID, targetUser.ID)
 	return member, nil
 }
 
@@ -173,6 +186,10 @@ func (service *WorkspaceService) UpdateMember(ctx context.Context, actorUserID u
 	if updateErr != nil {
 		return domain.WorkspaceMember{}, mapRepositoryError(updateErr, "workspace member")
 	}
+	event := newLiveEvent(EventWorkspaceMemberUpdated, actorUserID, &workspaceID)
+	event.SubjectUserID = &targetUserID
+	event.Role = role
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, workspaceID, event, actorUserID, targetUserID)
 	return member, nil
 }
 
@@ -205,7 +222,16 @@ func (service *WorkspaceService) RemoveMember(ctx context.Context, actorUserID u
 	if removeErr := service.workspaces.RemoveWorkspaceMember(ctx, workspaceID, targetUserID); removeErr != nil {
 		return mapRepositoryError(removeErr, "workspace member")
 	}
+	event := newLiveEvent(EventWorkspaceMemberRemoved, actorUserID, &workspaceID)
+	event.SubjectUserID = &targetUserID
+	service.eventsPublish(ctx, memberUserIDs(members, actorUserID, targetUserID), event)
 	return nil
+}
+
+func (service *WorkspaceService) eventsPublish(ctx context.Context, recipients []uuid.UUID, event domain.LiveEvent) {
+	if service.events != nil {
+		service.events.Publish(ctx, recipients, event)
+	}
 }
 
 func (service *WorkspaceService) requireWorkspaceRole(ctx context.Context, actorUserID uuid.UUID, workspaceID uuid.UUID) (domain.WorkspaceWithRole, error) {

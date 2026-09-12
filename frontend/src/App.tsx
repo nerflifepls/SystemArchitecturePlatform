@@ -4,6 +4,7 @@ import { lazy, Suspense } from "react";
 import { AppShell } from "./components/AppShell";
 import { StatusPanel } from "./components/ui";
 import { useSession } from "./hooks/useAuth";
+import { LiveEventsProvider } from "./live/LiveEventsProvider";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DiagramOverviewPage } from "./pages/DiagramOverviewPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -45,7 +46,7 @@ function RequireAuth() {
 		return <Navigate to="/login" replace state={{ from: location.pathname }} />;
 	}
 
-	return <Outlet />;
+	return <LiveEventsProvider userId={sessionQuery.data.user.id}><Outlet /></LiveEventsProvider>;
 }
 
 export function App() {

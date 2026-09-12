@@ -16,7 +16,7 @@ import * as Y from "yjs";
 
 import { ApiError } from "../api/client";
 import { crdtApi, diagramApi } from "../api/endpoints";
-import type { CrdtUpdatesResponseDto, DiagramSnapshotDto, PresenceCursorDto } from "../api/types";
+import type { CrdtUpdatesResponseDto, DiagramDto, DiagramSnapshotDto, PresenceCursorDto } from "../api/types";
 import { DiagramCanvas } from "../components/editor/DiagramCanvas";
 import { DiagramEditorPanel } from "../components/editor/DiagramEditorPanel";
 import { CommentNode, DiagramBoundaryNode, DiagramComponentNode } from "../components/editor/DiagramNodes";
@@ -77,6 +77,7 @@ import {
 } from "../components/editor/diagramEditorModel";
 import { classNames } from "../components/ui/classNames";
 import { useSession } from "../hooks/useAuth";
+import { useLiveEvents } from "../live/LiveEventsProvider";
 import { getErrorMessage } from "../utils/errors";
 import { canEditWorkspaceContent } from "../utils/roles";
 import {
@@ -104,6 +105,7 @@ function haveSameSelectionIds(current: string[], next: string[]) {
 export function DiagramEditorPage() {
 	const { workspaceId = "", projectId = "", diagramId = "" } = useParams();
 	const queryClient = useQueryClient();
+	const { accessLoss: liveAccessLoss, applyRoleChange, reportAccessLoss } = useLiveEvents();
 	const doc = useMemo(() => new Y.Doc({ guid: diagramId }), [diagramId]);
 	const maps = useMemo(
 		() => ({
@@ -144,6 +146,7 @@ export function DiagramEditorPage() {
 	const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
 	const [reconnectAttempt, setReconnectAttempt] = useState(0);
 	const [websocketGeneration, setWebsocketGeneration] = useState(0);
+	const [accessRevoked, setAccessRevoked] = useState(false);
 	const [canUndo, setCanUndo] = useState(false);
 	const [canRedo, setCanRedo] = useState(false);
 	const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
@@ -175,6 +178,7 @@ export function DiagramEditorPage() {
 	const reconnectAttemptsRef = useRef(0);
 	const persistedSyncPromiseRef = useRef<Promise<number> | null>(null);
 	const canEditRef = useRef(false);
+	const accessRevokedRef = useRef(false);
 	const ownConnectionIdRef = useRef<string | null>(null);
 	const syncedConnectionIdsRef = useRef<Set<string>>(new Set());
 	const editorConnections = getEditorConnections(presenceConnections);
@@ -214,11 +218,13 @@ export function DiagramEditorPage() {
 		queryKey: ["diagram", diagramId],
 		queryFn: ({ signal }) => diagramApi.get(diagramId, signal),
 		enabled: Boolean(diagramId),
+		refetchOnMount: "always",
 		refetchOnWindowFocus: false,
 	});
-	const canEdit = canEditWorkspaceContent(diagramQuery.data?.role);
-	const readOnly = !canEdit;
 	const initialSyncReady = initializedDiagramId === diagramId;
+	const roleIsAuthoritative = initialSyncReady || (diagramQuery.isSuccess && !diagramQuery.isFetching);
+	const canEdit = !accessRevoked && roleIsAuthoritative && canEditWorkspaceContent(diagramQuery.data?.role);
+	const readOnly = !canEdit;
 
 	const updatesQuery = useQuery({
 		queryKey: ["diagram", diagramId, "updates"],
@@ -344,10 +350,10 @@ export function DiagramEditorPage() {
 		}
 
 		const flushPromise = (async () => {
-			if (!diagramId || !navigator.onLine) return;
+			if (!diagramId || !navigator.onLine || !canEditRef.current) return;
 			const queue = pendingQueueRef.current;
 
-			while (queue.length > 0 && navigator.onLine) {
+			while (queue.length > 0 && navigator.onLine && canEditRef.current) {
 				const queuedUpdate = queue[0];
 				const ack = await crdtApi.postUpdate(
 					diagramId,
@@ -391,6 +397,7 @@ export function DiagramEditorPage() {
 
 	const enqueuePendingUpdate = useCallback(
 		(update: Uint8Array) => {
+			if (!canEditRef.current) return;
 			const copiedBytes = new Uint8Array(update.byteLength);
 			copiedBytes.set(update);
 			let broadcasted = false;
@@ -460,6 +467,15 @@ export function DiagramEditorPage() {
 		}
 	}, [canEdit, sendPresenceUpdate]);
 
+	useEffect(() => {
+		if (!liveAccessLoss || liveAccessLoss.workspaceId !== workspaceId) return;
+		if (liveAccessLoss.projectId && liveAccessLoss.projectId !== projectId) return;
+		if (liveAccessLoss.diagramId && liveAccessLoss.diagramId !== diagramId) return;
+		accessRevokedRef.current = true;
+		canEditRef.current = false;
+		setAccessRevoked(true);
+	}, [diagramId, liveAccessLoss, projectId, workspaceId]);
+
 	const schedulePersistedSync = useCallback(() => {
 		if (persistedSyncTimerRef.current) {
 			window.clearTimeout(persistedSyncTimerRef.current);
@@ -476,8 +492,10 @@ export function DiagramEditorPage() {
 
 	const saveSnapshot = useMutation({
 		mutationFn: async (intent: SnapshotIntent) => {
+			if (!canEditRef.current) throw new Error("This diagram is read-only.");
 			await waitForPendingUpdates();
 			const baseUpdateSeq = await syncPersistedUpdates();
+			if (!canEditRef.current) throw new Error("This diagram is read-only.");
 			const snapshotBytes = Y.encodeStateAsUpdate(doc);
 
 			return crdtApi.saveSnapshot(diagramId, snapshotBytes, baseUpdateSeq, clientIdRef.current, intent);
@@ -525,7 +543,9 @@ export function DiagramEditorPage() {
 
 	const restoreSnapshot = useMutation({
 		mutationFn: async (snapshot: DiagramSnapshotDto) => {
+			if (!canEditRef.current) throw new Error("This diagram is read-only.");
 			const snapshotBytes = await crdtApi.getSnapshotVersion(diagramId, snapshot.snapshotVersion);
+			if (!canEditRef.current) throw new Error("This diagram is read-only.");
 			const restoredDoc = new Y.Doc();
 			Y.applyUpdate(restoredDoc, snapshotBytes, INIT_ORIGIN);
 			const restoredNodes = restoredDoc.getMap<StoredNode>("nodes");
@@ -576,7 +596,7 @@ export function DiagramEditorPage() {
 
 		snapshotTimerRef.current = window.setTimeout(() => {
 			snapshotTimerRef.current = null;
-			if (navigator.onLine) {
+			if (navigator.onLine && canEditRef.current) {
 				saveSnapshot.mutate({ reason: "automatic" });
 			}
 		}, 1400);
@@ -591,6 +611,7 @@ export function DiagramEditorPage() {
 
 			const bufferedUpdates = pendingLiveUpdatesRef.current;
 			pendingLiveUpdatesRef.current = [];
+			if (!canEditRef.current) return;
 			if (trailingUpdate) {
 				bufferedUpdates.push(new Uint8Array(trailingUpdate));
 			}
@@ -678,6 +699,8 @@ export function DiagramEditorPage() {
 		reconnectAttemptsRef.current = 0;
 		setReconnectAttempt(0);
 		setSelectedNodeIds([]);
+		setAccessRevoked(false);
+		accessRevokedRef.current = false;
 		undoManager.clear();
 		setInitializedDiagramId(null);
 	}, [diagramId, undoManager]);
@@ -697,7 +720,7 @@ export function DiagramEditorPage() {
 	}, [doc, snapshotQuery.data, snapshotReady, syncFromSharedMaps]);
 
 	useEffect(() => {
-		if (initialUpdatesAppliedRef.current || !snapshotReady || !updatesReady || !diagramQuery.isSuccess) {
+		if (initialUpdatesAppliedRef.current || !snapshotReady || !updatesReady || !diagramQuery.isSuccess || diagramQuery.isFetching) {
 			return;
 		}
 
@@ -752,6 +775,7 @@ export function DiagramEditorPage() {
 	}, [
 		canEdit,
 		diagramId,
+		diagramQuery.isFetching,
 		diagramQuery.isSuccess,
 		doc,
 		flushPendingQueue,
@@ -810,7 +834,7 @@ export function DiagramEditorPage() {
 	}, [flushBufferedLiveUpdates]);
 
 	useEffect(() => {
-		if (!diagramId || !initialSyncReady) {
+		if (!diagramId || !initialSyncReady || accessRevokedRef.current) {
 			return;
 		}
 		if (!navigator.onLine) {
@@ -859,17 +883,6 @@ export function DiagramEditorPage() {
 			};
 			sendPing();
 			pingTimerRef.current = window.setInterval(sendPing, 15_000);
-			void flushPendingQueue()
-				.then(syncPersistedUpdates)
-				.then(() => {
-					if (canEditRef.current && websocket.readyState === WebSocket.OPEN) {
-						websocket.send(toArrayBuffer(Y.encodeStateAsUpdate(doc)));
-					}
-				})
-				.catch((error: unknown) => {
-					setLastError(getErrorMessage(error));
-					setSyncState(navigator.onLine ? "error" : "offline");
-				});
 		});
 
 		websocket.addEventListener("message", (event) => {
@@ -884,9 +897,65 @@ export function DiagramEditorPage() {
 					return;
 				}
 
+				if (frame.type === "access:changed" && frame.role) {
+					canEditRef.current = canEditWorkspaceContent(frame.role);
+					applyRoleChange({
+						workspaceId: frame.workspaceId ?? workspaceId,
+						projectId: frame.projectId ?? projectId,
+						diagramId: frame.diagramId ?? diagramId,
+						role: frame.role,
+					});
+					setLastError(
+						canEditRef.current ?
+							`Your role changed to ${frame.role}. Editing access is active.`
+						: `Your role changed to ${frame.role}. This diagram is now read-only.`,
+					);
+					return;
+				}
+
+				if (frame.type === "access:revoked") {
+					setAccessRevoked(true);
+					accessRevokedRef.current = true;
+					canEditRef.current = false;
+					const reason =
+						frame.reason === "workspace_deleted" ||
+						frame.reason === "project_deleted" ||
+						frame.reason === "diagram_deleted" ||
+						frame.reason === "authorization_revoked" ?
+							frame.reason
+						: "membership_removed";
+					reportAccessLoss({
+						reason,
+						workspaceId: frame.workspaceId ?? workspaceId,
+						projectId: frame.projectId ?? projectId,
+						diagramId: frame.diagramId ?? diagramId,
+					});
+					setSyncState("offline");
+					setLastError("Access to this diagram was revoked.");
+					return;
+				}
+
 				if (frame.type === "ready" && frame.connectionId) {
+					if (frame.role) {
+						canEditRef.current = canEditWorkspaceContent(frame.role);
+						queryClient.setQueryData<DiagramDto>(["diagram", diagramId], (current) =>
+							current ? { ...current, role: frame.role } : current,
+						);
+					}
 					setOwnConnectionId(frame.connectionId);
 					ownConnectionIdRef.current = frame.connectionId;
+					sendPresenceUpdate(null, true);
+					void flushPendingQueue()
+						.then(syncPersistedUpdates)
+						.then(() => {
+							if (canEditRef.current && websocket.readyState === WebSocket.OPEN) {
+								websocket.send(toArrayBuffer(Y.encodeStateAsUpdate(doc)));
+							}
+						})
+						.catch((error: unknown) => {
+							setLastError(getErrorMessage(error));
+							setSyncState(navigator.onLine ? "error" : "offline");
+						});
 					return;
 				}
 
@@ -948,7 +1017,7 @@ export function DiagramEditorPage() {
 				window.clearInterval(pingTimerRef.current);
 				pingTimerRef.current = null;
 			}
-			if (navigator.onLine) {
+			if (navigator.onLine && !accessRevokedRef.current) {
 				const attempt = reconnectAttemptsRef.current + 1;
 				reconnectAttemptsRef.current = attempt;
 				setReconnectAttempt(attempt);
@@ -986,14 +1055,20 @@ export function DiagramEditorPage() {
 		doc,
 		flushPendingQueue,
 		initialSyncReady,
+		applyRoleChange,
+		projectId,
+		queryClient,
+		reportAccessLoss,
 		schedulePersistedSync,
 		sendPresenceUpdate,
 		syncPersistedUpdates,
+		workspaceId,
 		websocketGeneration,
 	]);
 
 	useEffect(() => {
 		const handleOnline = () => {
+			if (accessRevokedRef.current) return;
 			setLastError(null);
 			setWebsocketGeneration((current) => current + 1);
 			void flushPendingQueue().catch(() => undefined);
@@ -1044,6 +1119,7 @@ export function DiagramEditorPage() {
 
 	const onNodesChange = useCallback(
 		(changes: NodeChange<DiagramNode>[]) => {
+			const effectiveChanges = canEditRef.current ? changes : changes.filter((change) => change.type === "select");
 			const currentCommentNodes = commentsRef.current.map((comment, index) => {
 				const cachedNode = commentNodeCacheRef.current.get(comment.id);
 				if (cachedNode) {
@@ -1060,7 +1136,7 @@ export function DiagramEditorPage() {
 				} satisfies DiagramNode;
 			});
 			const expandedBoundaryDrag = expandBoundaryDragChanges(
-				changes,
+				effectiveChanges,
 				[...nodesRef.current, ...currentCommentNodes],
 				boundaryDragSessionsRef.current,
 			);
@@ -1260,11 +1336,12 @@ export function DiagramEditorPage() {
 
 	const onEdgesChange = useCallback(
 		(changes: EdgeChange<DiagramEdge>[]) => {
-			const nextEdges = applyEdgeChanges(changes, edgesRef.current);
+			const effectiveChanges = canEditRef.current ? changes : changes.filter((change) => change.type === "select");
+			const nextEdges = applyEdgeChanges(effectiveChanges, edgesRef.current);
 			const changedEdgeIds = new Set<string>();
 			const removedEdgeIds = new Set<string>();
 
-			for (const change of changes) {
+			for (const change of effectiveChanges) {
 				switch (change.type) {
 					case "add":
 						changedEdgeIds.add(change.item.id);
@@ -1309,6 +1386,7 @@ export function DiagramEditorPage() {
 
 	const onConnect = useCallback(
 		(connection: Connection) => {
+			if (!canEditRef.current) return;
 			if (!connection.source || !connection.target) {
 				return;
 			}
@@ -1340,6 +1418,7 @@ export function DiagramEditorPage() {
 
 	const onReconnect = useCallback(
 		(oldEdge: DiagramEdge, connection: Connection) => {
+			if (!canEditRef.current) return;
 			const nextEdges = reconnectEdge(oldEdge, connection, edgesRef.current);
 			const updatedEdge = nextEdges.find((edge) => edge.id === oldEdge.id);
 
@@ -1399,6 +1478,7 @@ export function DiagramEditorPage() {
 	);
 
 	function addNode() {
+		if (!canEditRef.current) return;
 		const nodeCount = nodesRef.current.length;
 		const node: StoredNode = {
 			id: `node-${crypto.randomUUID()}`,
@@ -1433,6 +1513,7 @@ export function DiagramEditorPage() {
 	}
 
 	function addBoundary() {
+		if (!canEditRef.current) return;
 		const center = getCanvasCenter() ?? { x: 380, y: 260 };
 		const boundary: StoredNode = {
 			id: `boundary-${crypto.randomUUID()}`,
@@ -1454,6 +1535,7 @@ export function DiagramEditorPage() {
 	}
 
 	function persistNodeBatch(nextNodes: DiagramNode[], changedNodeIds: Set<string>) {
+		if (!canEditRef.current) return;
 		nodesRef.current = nextNodes;
 		setNodes(nextNodes);
 		doc.transact(() => {
@@ -1464,6 +1546,7 @@ export function DiagramEditorPage() {
 	}
 
 	function duplicateSelection() {
+		if (!canEditRef.current) return;
 		const selected = nodesRef.current.filter((node) => selectedNodeIdSet.has(node.id));
 		if (!selected.length) return;
 		const idMap = new Map(selected.map((node) => [node.id, `${node.type === "boundary" ? "boundary" : "node"}-${crypto.randomUUID()}`]));
@@ -1500,6 +1583,7 @@ export function DiagramEditorPage() {
 	}
 
 	function alignSelection(axis: AlignmentAxis) {
+		if (!canEditRef.current) return;
 		const alignableNodeIds = new Set(
 			nodesRef.current
 				.filter((node) => selectedNodeIdSet.has(node.id) && node.type !== "boundary" && node.type !== "comment")
@@ -1511,6 +1595,7 @@ export function DiagramEditorPage() {
 	}
 
 	function autoLayout(direction: LayoutDirection) {
+		if (!canEditRef.current) return;
 		const nextNodes = autoLayoutDiagram(nodesRef.current, edgesRef.current, direction);
 		persistNodeBatch(nextNodes, new Set(nextNodes.filter((node) => node.type !== "boundary").map((node) => node.id)));
 		window.setTimeout(() => reactFlowInstanceRef.current?.fitView({ padding: 0.22, duration: 420 }), 0);
@@ -1539,6 +1624,7 @@ export function DiagramEditorPage() {
 	}
 
 	function addComment(position = getCommentStartPosition()) {
+		if (!canEditRef.current) return;
 		const currentUser = sessionQuery.data?.user;
 		const now = new Date().toISOString();
 		const comment: StoredComment = {
@@ -1566,6 +1652,7 @@ export function DiagramEditorPage() {
 	}
 
 	function updateNodeLabel(nodeId: string, label: string) {
+		if (!canEditRef.current) return;
 		const nextNodes = nodesRef.current.map((node) =>
 			node.id === nodeId ? { ...node, data: { ...node.data, label } } : node,
 		);
@@ -1584,6 +1671,7 @@ export function DiagramEditorPage() {
 	}
 
 	function updateNodeKind(nodeId: string, kind: string) {
+		if (!canEditRef.current) return;
 		const nextNodes = nodesRef.current.map((node) =>
 			node.id === nodeId ? { ...node, data: { ...node.data, kind } } : node,
 		);
@@ -1602,6 +1690,7 @@ export function DiagramEditorPage() {
 	}
 
 	function removeNode(nodeId: string) {
+		if (!canEditRef.current) return;
 		const nextNodes = nodesRef.current.filter((node) => node.id !== nodeId);
 		const nextEdges = edgesRef.current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
 		const removedEdgeIds = new Set(
@@ -1640,6 +1729,7 @@ export function DiagramEditorPage() {
 	}
 
 	function updateEdgeLabel(edgeId: string, label: string) {
+		if (!canEditRef.current) return;
 		const trimmedLabel = label.trim();
 		const nextEdges = edgesRef.current.map((edge) =>
 			edge.id === edgeId ? { ...edge, label: trimmedLabel || undefined } : edge,
@@ -1670,6 +1760,7 @@ export function DiagramEditorPage() {
 	}
 
 	function removeEdge(edgeId: string) {
+		if (!canEditRef.current) return;
 		const nextEdges = edgesRef.current.filter((edge) => edge.id !== edgeId);
 
 		edgesRef.current = nextEdges;
@@ -1683,6 +1774,7 @@ export function DiagramEditorPage() {
 
 	const updateCommentText = useCallback(
 		(commentId: string, text: string) => {
+			if (!canEditRef.current) return;
 			const updatedAt = new Date().toISOString();
 			const nextComments = commentsRef.current.map((comment) =>
 				comment.id === commentId ? { ...comment, text, updatedAt } : comment,
@@ -1705,6 +1797,7 @@ export function DiagramEditorPage() {
 
 	const removeComment = useCallback(
 		(commentId: string) => {
+			if (!canEditRef.current) return;
 			const nextComments = commentsRef.current.filter((comment) => comment.id !== commentId);
 
 			commentsRef.current = nextComments;
@@ -1724,6 +1817,7 @@ export function DiagramEditorPage() {
 
 	const persistNodePosition = useCallback(
 		(nodeId: string, position: FlowPosition) => {
+			if (!canEditRef.current) return;
 			const currentNode = nodesRef.current.find((node) => node.id === nodeId);
 
 			if (!currentNode) {
@@ -1755,6 +1849,7 @@ export function DiagramEditorPage() {
 
 	const persistCommentPosition = useCallback(
 		(commentId: string, position: FlowPosition) => {
+			if (!canEditRef.current) return;
 			const currentComment = commentsRef.current.find((comment) => comment.id === commentId);
 
 			if (!currentComment) {
@@ -1782,6 +1877,7 @@ export function DiagramEditorPage() {
 
 	const updateCommentSize = useCallback(
 		(commentId: string, size: CommentSize) => {
+			if (!canEditRef.current) return;
 			const nextSize = clampCommentSize(size);
 			const nextComments = commentsRef.current.map((comment) =>
 				comment.id === commentId ?
@@ -1851,7 +1947,7 @@ export function DiagramEditorPage() {
 	}
 
 	async function handleImport(file: File) {
-		if (!canEdit) return;
+		if (!canEditRef.current) return;
 		try {
 			if (snapshotTimerRef.current) {
 				window.clearTimeout(snapshotTimerRef.current);
@@ -1859,6 +1955,7 @@ export function DiagramEditorPage() {
 			}
 			setLastError(null);
 			const imported = parseDiagramDocument(await file.text());
+			if (!canEditRef.current) return;
 			doc.transact(() => {
 				for (const key of Array.from(maps.nodes.keys())) maps.nodes.delete(key);
 				for (const key of Array.from(maps.edges.keys())) maps.edges.delete(key);
@@ -1997,7 +2094,7 @@ export function DiagramEditorPage() {
 
 	useEffect(() => {
 		const handleKeyboardShortcut = (event: KeyboardEvent) => {
-			if (readOnly || (!event.ctrlKey && !event.metaKey)) return;
+			if (!canEditRef.current || (!event.ctrlKey && !event.metaKey)) return;
 			const target = event.target as HTMLElement | null;
 			if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
 			if (event.key.toLowerCase() === "z") {
@@ -2013,7 +2110,7 @@ export function DiagramEditorPage() {
 		};
 		window.addEventListener("keydown", handleKeyboardShortcut);
 		return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-	}, [readOnly, undoManager]);
+	}, [undoManager]);
 
 	return (
 		<div className={classNames(styles.page, hasEditorStatus && styles.withStatus)}>
@@ -2121,8 +2218,8 @@ export function DiagramEditorPage() {
 						}
 						saveSnapshot.mutate({ name, reason: "manual" });
 					}}
-					onUndo={() => undoManager.undo()}
-					onRedo={() => undoManager.redo()}
+					onUndo={() => { if (canEditRef.current) undoManager.undo(); }}
+					onRedo={() => { if (canEditRef.current) undoManager.redo(); }}
 					onDuplicateSelection={duplicateSelection}
 					onAlignSelection={alignSelection}
 					onAutoLayout={autoLayout}

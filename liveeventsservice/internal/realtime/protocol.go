@@ -9,7 +9,10 @@ import (
 type readyMessage struct {
 	Type         string `json:"type"`
 	ConnectionID string `json:"connectionId"`
-	DiagramID    string `json:"diagramId"`
+	Scope        string `json:"scope,omitempty"`
+	DiagramID    string `json:"diagramId,omitempty"`
+	ProjectID    string `json:"projectId,omitempty"`
+	WorkspaceID  string `json:"workspaceId,omitempty"`
 	UserID       string `json:"userId"`
 	Role         string `json:"role,omitempty"`
 }
@@ -23,6 +26,28 @@ type errorMessage struct {
 	Type    string `json:"type"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+type liveEvent struct {
+	ID              string    `json:"id"`
+	Type            string    `json:"type"`
+	OccurredAt      time.Time `json:"occurredAt"`
+	ActorUserID     string    `json:"actorUserId"`
+	WorkspaceID     string    `json:"workspaceId,omitempty"`
+	ProjectID       string    `json:"projectId,omitempty"`
+	DiagramID       string    `json:"diagramId,omitempty"`
+	SubjectUserID   string    `json:"subjectUserId,omitempty"`
+	Role            string    `json:"role,omitempty"`
+	SnapshotVersion int64     `json:"snapshotVersion,omitempty"`
+}
+
+type accessMessage struct {
+	Type        string `json:"type"`
+	Reason      string `json:"reason,omitempty"`
+	WorkspaceID string `json:"workspaceId"`
+	ProjectID   string `json:"projectId,omitempty"`
+	DiagramID   string `json:"diagramId,omitempty"`
+	Role        string `json:"role,omitempty"`
 }
 
 type clientTextMessage struct {

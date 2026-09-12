@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 	"time"
 
+	"liveeventsservice/internal/authz"
+
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -22,6 +26,7 @@ const (
 // Hub tracks active diagram rooms and coordinates Redis pub/sub relay.
 type Hub struct {
 	redis      *goredis.Client
+	authz      *authz.Client
 	instanceID string
 	logger     *log.Logger
 
@@ -33,14 +38,16 @@ type Hub struct {
 
 type room struct {
 	diagramID    string
+	workspaceID  string
 	connections  map[string]*Connection
 	subscription context.CancelFunc
 }
 
 // NewHub creates a realtime hub for one service instance.
-func NewHub(redisClient *goredis.Client, instanceID string, logger *log.Logger) *Hub {
+func NewHub(redisClient *goredis.Client, authzClient *authz.Client, instanceID string, logger *log.Logger) *Hub {
 	return &Hub{
 		redis:      redisClient,
+		authz:      authzClient,
 		instanceID: instanceID,
 		logger:     logger,
 		rooms:      make(map[string]*room),
@@ -54,21 +61,82 @@ func (hub *Hub) Register(ctx context.Context, connection *Connection) error {
 	}
 
 	hub.mu.Lock()
-	defer hub.mu.Unlock()
 	if hub.closed {
+		hub.mu.Unlock()
+		_ = hub.cleanupConnectionState(ctx, connection)
 		return context.Canceled
 	}
-
 	currentRoom := hub.rooms[connection.DiagramID]
+	if currentRoom != nil {
+		currentRoom.connections[connection.ID] = connection
+		hub.mu.Unlock()
+		hub.finishRegistration(ctx, connection)
+		return nil
+	}
+	hub.mu.Unlock()
+
+	// Redis subscription setup performs network I/O, so keep it outside the
+	// hub-wide lock. A second lock/check below resolves concurrent first joins.
+	subscriptionCtx, cancelSubscription, pubsub, receiveErr := openRedisSubscription(
+		ctx,
+		hub.redis,
+		diagramUpdatesChannel(connection.DiagramID),
+		diagramPresenceChannel(connection.DiagramID),
+		workspaceEventsChannel(connection.WorkspaceID),
+	)
+	if receiveErr != nil {
+		_ = hub.cleanupConnectionState(ctx, connection)
+		return receiveErr
+	}
+
+	useSubscription := false
+	hub.mu.Lock()
+	if hub.closed {
+		hub.mu.Unlock()
+		cancelSubscription()
+		_ = pubsub.Close()
+		_ = hub.cleanupConnectionState(ctx, connection)
+		return context.Canceled
+	}
+	currentRoom = hub.rooms[connection.DiagramID]
 	if currentRoom == nil {
-		subscriptionCtx, cancelSubscription := context.WithCancel(context.Background())
-		currentRoom = &room{diagramID: connection.DiagramID, connections: make(map[string]*Connection), subscription: cancelSubscription}
+		currentRoom = &room{diagramID: connection.DiagramID, workspaceID: connection.WorkspaceID, connections: make(map[string]*Connection), subscription: cancelSubscription}
 		hub.rooms[connection.DiagramID] = currentRoom
-		go hub.subscribe(subscriptionCtx, connection.DiagramID)
+		useSubscription = true
 	}
 	currentRoom.connections[connection.ID] = connection
-	go hub.refreshConnectionTTL(connection)
+	hub.mu.Unlock()
+
+	if useSubscription {
+		go hub.subscribe(subscriptionCtx, currentRoom, pubsub)
+	} else {
+		cancelSubscription()
+		_ = pubsub.Close()
+	}
+	hub.finishRegistration(ctx, connection)
 	return nil
+}
+
+func (hub *Hub) finishRegistration(ctx context.Context, connection *Connection) {
+	// Authorization happened before the room subscription existed. Recheck once
+	// after subscribing so a permission event published in that small gap cannot
+	// leave a stale editor connection active until the periodic check.
+	hub.reauthorizeConnection(ctx, connection)
+	go hub.refreshConnectionTTL(connection)
+}
+
+func openRedisSubscription(ctx context.Context, redisClient *goredis.Client, channels ...string) (context.Context, context.CancelFunc, *goredis.PubSub, error) {
+	subscriptionCtx, cancelSubscription := context.WithCancel(context.Background())
+	pubsub := redisClient.Subscribe(subscriptionCtx, channels...)
+	readyCtx, cancelReady := context.WithTimeout(ctx, redisOperationTimeout)
+	_, receiveErr := pubsub.Receive(readyCtx)
+	cancelReady()
+	if receiveErr != nil {
+		cancelSubscription()
+		_ = pubsub.Close()
+		return nil, nil, nil, receiveErr
+	}
+	return subscriptionCtx, cancelSubscription, pubsub, nil
 }
 
 // SendPresenceSnapshot sends the current Redis presence hash to a newly connected client.
@@ -144,7 +212,9 @@ func (hub *Hub) Close(ctx context.Context) {
 
 // HandleBinary relays a Yjs update locally and through Redis pub/sub.
 func (hub *Hub) HandleBinary(ctx context.Context, connection *Connection, payload []byte) {
-	if !canEditRole(connection.Role) {
+	connection.roleMu.RLock()
+	defer connection.roleMu.RUnlock()
+	if !canEditRole(connection.role) {
 		connection.enqueue(outboundMessage{
 			messageType: websocket.TextMessage,
 			payload: encodeJSON(errorMessage{
@@ -222,6 +292,8 @@ func (hub *Hub) writeConnectionState(ctx context.Context, connection *Connection
 	pipeline.HSet(ctx, wsConnectionKey(connection.ID), map[string]any{
 		"connection_id": connection.ID,
 		"diagram_id":    connection.DiagramID,
+		"project_id":    connection.ProjectID,
+		"workspace_id":  connection.WorkspaceID,
 		"user_id":       connection.Session.UserID.String(),
 		"session_id":    connection.Session.ID,
 		"instance_id":   hub.instanceID,
@@ -299,21 +371,67 @@ func (hub *Hub) refreshConnectionTTL(connection *Connection) {
 			if _, execErr := pipeline.Exec(ctx); execErr != nil && hub.logger != nil {
 				hub.logger.Printf("refresh websocket redis ttl for %s: %v", connection.ID, execErr)
 			}
+			hub.reauthorizeConnection(ctx, connection)
 			cancel()
 		}
 	}
 }
 
-func (hub *Hub) subscribe(ctx context.Context, diagramID string) {
-	pubsub := hub.redis.Subscribe(ctx, diagramUpdatesChannel(diagramID), diagramPresenceChannel(diagramID))
-	defer func() { _ = pubsub.Close() }()
-
-	if _, receiveErr := pubsub.Receive(ctx); receiveErr != nil {
-		if ctx.Err() == nil && hub.logger != nil {
-			hub.logger.Printf("subscribe to diagram %s: %v", diagramID, receiveErr)
+func (hub *Hub) reauthorizeConnection(ctx context.Context, connection *Connection) {
+	if hub.authz == nil {
+		return
+	}
+	connection.authorizationMu.Lock()
+	defer connection.authorizationMu.Unlock()
+	diagramID, parseErr := uuid.Parse(connection.DiagramID)
+	if parseErr != nil {
+		return
+	}
+	authorization, authorizeErr := hub.authz.AuthorizeDiagram(ctx, diagramID, connection.Session.UserID)
+	if authorizeErr != nil {
+		if errors.Is(authorizeErr, authz.ErrForbidden) {
+			connection.revokeAccess()
+			enqueued := connection.enqueue(outboundMessage{
+				messageType: websocket.TextMessage,
+				payload: encodeJSON(accessMessage{
+					Type:        "access:revoked",
+					Reason:      "authorization_revoked",
+					WorkspaceID: connection.WorkspaceID,
+					ProjectID:   connection.ProjectID,
+					DiagramID:   connection.DiagramID,
+				}),
+				closeAfter: true,
+			})
+			if !enqueued && connection.websocket != nil {
+				_ = connection.websocket.Close()
+			}
 		}
 		return
 	}
+	if !validRole(authorization.Role) || authorization.Role == connection.currentRole() {
+		return
+	}
+	if !connection.setRole(authorization.Role) {
+		return
+	}
+	connection.enqueue(outboundMessage{
+		messageType: websocket.TextMessage,
+		payload: encodeJSON(accessMessage{
+			Type:        "access:changed",
+			Reason:      "role_changed",
+			WorkspaceID: connection.WorkspaceID,
+			ProjectID:   connection.ProjectID,
+			DiagramID:   connection.DiagramID,
+			Role:        authorization.Role,
+		}),
+	})
+}
+
+func (hub *Hub) subscribe(ctx context.Context, currentRoom *room, pubsub *goredis.PubSub) {
+	diagramID := currentRoom.diagramID
+	workspaceID := currentRoom.workspaceID
+	defer func() { _ = pubsub.Close() }()
+	defer hub.subscriptionEnded(currentRoom)
 
 	messages := pubsub.Channel()
 	for {
@@ -329,8 +447,132 @@ func (hub *Hub) subscribe(ctx context.Context, diagramID string) {
 				hub.handleUpdatePubSub(diagramID, []byte(message.Payload))
 			case diagramPresenceChannel(diagramID):
 				hub.broadcastText(diagramID, []byte(message.Payload))
+			case workspaceEventsChannel(workspaceID):
+				hub.handleWorkspaceEvent(diagramID, []byte(message.Payload))
 			}
 		}
+	}
+}
+
+func (hub *Hub) subscriptionEnded(endedRoom *room) {
+	hub.mu.Lock()
+	if hub.rooms[endedRoom.diagramID] != endedRoom {
+		hub.mu.Unlock()
+		return
+	}
+	delete(hub.rooms, endedRoom.diagramID)
+	connections := make([]*Connection, 0, len(endedRoom.connections))
+	for _, connection := range endedRoom.connections {
+		connections = append(connections, connection)
+	}
+	hub.mu.Unlock()
+
+	for _, connection := range connections {
+		connection.closeSend()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), staleConnectionTimeout)
+		if cleanupErr := hub.cleanupConnectionState(cleanupCtx, connection); cleanupErr != nil && hub.logger != nil {
+			hub.logger.Printf("cleanup websocket connection %s after subscription ended: %v", connection.ID, cleanupErr)
+		}
+		cancel()
+	}
+}
+
+func (hub *Hub) handleWorkspaceEvent(diagramID string, payload []byte) {
+	var event liveEvent
+	if decodeErr := json.Unmarshal(payload, &event); decodeErr != nil {
+		if hub.logger != nil {
+			hub.logger.Printf("decode workspace event for diagram %s: %v", diagramID, decodeErr)
+		}
+		return
+	}
+
+	hub.mu.RLock()
+	currentRoom := hub.rooms[diagramID]
+	connections := make([]*Connection, 0)
+	if currentRoom != nil {
+		for _, connection := range currentRoom.connections {
+			connections = append(connections, connection)
+		}
+	}
+	hub.mu.RUnlock()
+
+	switch event.Type {
+	case "workspace.member.updated":
+		if event.SubjectUserID == "" || !validRole(event.Role) {
+			return
+		}
+		for _, connection := range connections {
+			if connection.Session.UserID.String() != event.SubjectUserID {
+				continue
+			}
+			connection.authorizationMu.Lock()
+			if !connection.setRole(event.Role) {
+				connection.authorizationMu.Unlock()
+				continue
+			}
+			connection.enqueue(outboundMessage{
+				messageType: websocket.TextMessage,
+				payload: encodeJSON(accessMessage{
+					Type:        "access:changed",
+					Reason:      "role_changed",
+					WorkspaceID: connection.WorkspaceID,
+					ProjectID:   connection.ProjectID,
+					DiagramID:   connection.DiagramID,
+					Role:        event.Role,
+				}),
+			})
+			connection.authorizationMu.Unlock()
+		}
+	case "workspace.member.removed":
+		hub.revokeMatching(connections, "membership_removed", func(connection *Connection) bool {
+			return event.SubjectUserID != "" && connection.Session.UserID.String() == event.SubjectUserID
+		})
+	case "workspace.deleted":
+		hub.revokeMatching(connections, "workspace_deleted", func(*Connection) bool { return true })
+	case "project.deleted":
+		hub.revokeMatching(connections, "project_deleted", func(connection *Connection) bool {
+			return event.ProjectID != "" && connection.ProjectID == event.ProjectID
+		})
+	case "diagram.deleted":
+		hub.revokeMatching(connections, "diagram_deleted", func(connection *Connection) bool {
+			return event.DiagramID != "" && connection.DiagramID == event.DiagramID
+		})
+	}
+}
+
+func (hub *Hub) revokeMatching(connections []*Connection, reason string, matches func(*Connection) bool) {
+	for _, connection := range connections {
+		if !matches(connection) {
+			continue
+		}
+		connection.authorizationMu.Lock()
+		connection.revokeAccess()
+		enqueued := connection.enqueue(outboundMessage{
+			messageType: websocket.TextMessage,
+			payload: encodeJSON(accessMessage{
+				Type:        "access:revoked",
+				Reason:      reason,
+				WorkspaceID: connection.WorkspaceID,
+				ProjectID:   connection.ProjectID,
+				DiagramID:   connection.DiagramID,
+			}),
+			closeAfter: true,
+		})
+		connection.authorizationMu.Unlock()
+		if !enqueued {
+			if connection.websocket != nil {
+				_ = connection.websocket.Close()
+			}
+		}
+	}
+}
+
+func validRole(role string) bool {
+	switch role {
+	case "owner", "admin", "editor", "viewer":
+		return true
+	default:
+		return false
 	}
 }
 

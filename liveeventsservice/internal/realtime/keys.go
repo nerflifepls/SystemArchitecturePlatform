@@ -23,3 +23,11 @@ func diagramUpdatesChannel(diagramID string) string {
 func diagramPresenceChannel(diagramID string) string {
 	return "pubsub:diagram:" + diagramID + ":presence"
 }
+
+func userEventsChannel(userID string) string {
+	return "pubsub:user:" + userID + ":events"
+}
+
+func workspaceEventsChannel(workspaceID string) string {
+	return "pubsub:workspace:" + workspaceID + ":events"
+}

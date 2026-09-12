@@ -10,6 +10,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 
 import { authApi, workspaceApi } from "../api/endpoints";
 import { sessionQueryKey, useSession } from "../hooks/useAuth";
+import { useLiveEvents } from "../live/LiveEventsProvider";
 import styles from "./AppShell.module.css";
 
 function getCurrentSection(pathname: string) {
@@ -29,6 +30,7 @@ function getCurrentSection(pathname: string) {
 }
 
 export function AppShell() {
+	const liveEvents = useLiveEvents();
 	const sessionQuery = useSession();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
@@ -49,6 +51,10 @@ export function AppShell() {
 	const userLabel = user?.name ?? user?.email ?? "Account";
 	const userInitial = userLabel.trim().charAt(0).toUpperCase() || "U";
 	const currentSection = getCurrentSection(location.pathname);
+	const liveStatusLabel =
+		liveEvents.status === "live" ? "Live updates connected"
+		: liveEvents.status === "connecting" ? `Reconnecting${liveEvents.reconnectAttempt ? ` · attempt ${liveEvents.reconnectAttempt}` : ""}`
+		: "Live updates offline";
 
 	return (
 		<div className={styles.shell}>
@@ -111,9 +117,9 @@ export function AppShell() {
 				</nav>
 
 				<div className={styles.sidebarFooter}>
-					<div className={styles.syncStatus}>
+					<div className={styles.syncStatus} data-status={liveEvents.status}>
 						<span className={styles.statusDot} aria-hidden="true" />
-						<span>Workspace synced</span>
+						<span>{liveStatusLabel}</span>
 						<Activity size={13} />
 					</div>
 					<div className={styles.userCard}>

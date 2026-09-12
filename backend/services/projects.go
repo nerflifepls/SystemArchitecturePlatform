@@ -26,10 +26,11 @@ type ProjectPatch struct {
 type ProjectService struct {
 	projects   ProjectRepository
 	workspaces WorkspaceRepository
+	events     LiveEventPublisher
 }
 
-func NewProjectService(projects ProjectRepository, workspaces WorkspaceRepository) *ProjectService {
-	return &ProjectService{projects: projects, workspaces: workspaces}
+func NewProjectService(projects ProjectRepository, workspaces WorkspaceRepository, events LiveEventPublisher) *ProjectService {
+	return &ProjectService{projects: projects, workspaces: workspaces, events: events}
 }
 
 func (service *ProjectService) ListProjects(ctx context.Context, actorUserID uuid.UUID, workspaceID uuid.UUID, limit int, cursor string) ([]domain.Project, string, error) {
@@ -63,6 +64,9 @@ func (service *ProjectService) CreateProject(ctx context.Context, actorUserID uu
 	if createErr != nil {
 		return domain.Project{}, mapRepositoryError(createErr, "project")
 	}
+	event := newLiveEvent(EventProjectCreated, actorUserID, &workspaceID)
+	event.ProjectID = &project.ID
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, workspaceID, event, actorUserID)
 	return project, nil
 }
 
@@ -106,11 +110,14 @@ func (service *ProjectService) UpdateProject(ctx context.Context, actorUserID uu
 	if updateErr != nil {
 		return domain.Project{}, mapRepositoryError(updateErr, "project")
 	}
+	event := newLiveEvent(EventProjectUpdated, actorUserID, &project.WorkspaceID)
+	event.ProjectID = &projectID
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, project.WorkspaceID, event, actorUserID)
 	return updatedProject, nil
 }
 
 func (service *ProjectService) DeleteProject(ctx context.Context, actorUserID uuid.UUID, projectID uuid.UUID) error {
-	_, role, accessErr := service.requireProjectAccess(ctx, actorUserID, projectID)
+	project, role, accessErr := service.requireProjectAccess(ctx, actorUserID, projectID)
 	if accessErr != nil {
 		return accessErr
 	}
@@ -120,6 +127,9 @@ func (service *ProjectService) DeleteProject(ctx context.Context, actorUserID uu
 	if deleteErr := service.projects.DeleteProject(ctx, projectID); deleteErr != nil {
 		return mapRepositoryError(deleteErr, "project")
 	}
+	event := newLiveEvent(EventProjectDeleted, actorUserID, &project.WorkspaceID)
+	event.ProjectID = &projectID
+	publishWorkspaceEvent(ctx, service.events, service.workspaces, project.WorkspaceID, event, actorUserID)
 	return nil
 }
 

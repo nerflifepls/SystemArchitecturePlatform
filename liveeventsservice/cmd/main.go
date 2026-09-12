@@ -34,8 +34,9 @@ func main() {
 		logger.Fatalf("create authz client: %v", authzErr)
 	}
 
-	hub := realtime.NewHub(redisClient, uuid.NewString(), logger)
-	realtimeHandler := realtime.NewHandler(appConfig, session.NewStore(redisClient), authzClient, hub, logger)
+	hub := realtime.NewHub(redisClient, authzClient, uuid.NewString(), logger)
+	eventHub := realtime.NewEventHub(redisClient, logger)
+	realtimeHandler := realtime.NewHandler(appConfig, session.NewStore(redisClient), authzClient, hub, eventHub, logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
@@ -79,6 +80,7 @@ func main() {
 	gracefulCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	hub.Close(gracefulCtx)
+	eventHub.Close()
 	if shutdownErr := server.Shutdown(gracefulCtx); shutdownErr != nil {
 		logger.Printf("graceful shutdown failed: %v", shutdownErr)
 		if closeErr := server.Close(); closeErr != nil {

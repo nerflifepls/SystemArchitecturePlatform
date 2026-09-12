@@ -145,7 +145,9 @@ export type PresenceFrameDto = {
 		| "error"
 		| "presence"
 		| "cursor"
-		| "status";
+		| "status"
+		| "access:changed"
+		| "access:revoked";
 	connectionId?: string;
 	diagramId?: string;
 	user?: UserDto;
@@ -158,9 +160,41 @@ export type PresenceFrameDto = {
 	presence?: PresencePayloadDto;
 	code?: string;
 	message?: string;
+	reason?: "role_changed" | "authorization_revoked" | "membership_removed" | "workspace_deleted" | "project_deleted" | "diagram_deleted";
+	workspaceId?: string;
+	projectId?: string;
+	role?: WorkspaceRole;
 	sentAt?: string;
 	updatedAt?: string;
 	lastSeenAt?: string;
+};
+
+export type LiveEventType =
+	| "workspace.created"
+	| "workspace.updated"
+	| "workspace.deleted"
+	| "workspace.member.added"
+	| "workspace.member.updated"
+	| "workspace.member.removed"
+	| "project.created"
+	| "project.updated"
+	| "project.deleted"
+	| "diagram.created"
+	| "diagram.updated"
+	| "diagram.deleted"
+	| "diagram.snapshot.saved";
+
+export type LiveEventDto = {
+	id: string;
+	type: LiveEventType;
+	occurredAt: string;
+	actorUserId: string;
+	workspaceId?: string;
+	projectId?: string;
+	diagramId?: string;
+	subjectUserId?: string;
+	role?: WorkspaceRole;
+	snapshotVersion?: number;
 };
 
 export type ListResponse<T> = {

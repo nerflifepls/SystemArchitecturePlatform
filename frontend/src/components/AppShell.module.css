@@ -278,6 +278,16 @@
 	box-shadow: 0 0 0 4px oklch(0.74 0.16 150 / 0.1), 0 0 12px oklch(0.74 0.16 150 / 0.55);
 }
 
+.syncStatus[data-status="connecting"] .statusDot {
+	background: #facc15;
+	box-shadow: 0 0 0 4px rgb(250 204 21 / 10%), 0 0 12px rgb(250 204 21 / 48%);
+}
+
+.syncStatus[data-status="offline"] .statusDot {
+	background: #fb7185;
+	box-shadow: 0 0 0 4px rgb(251 113 133 / 10%), 0 0 12px rgb(251 113 133 / 48%);
+}
+
 .userCard {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr) auto;

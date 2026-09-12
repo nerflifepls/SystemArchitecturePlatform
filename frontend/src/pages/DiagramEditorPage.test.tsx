@@ -85,19 +85,35 @@ class IdleWebSocket {
 	static readonly OPEN = 1;
 	static readonly CLOSING = 2;
 	static readonly CLOSED = 3;
+	static instances: IdleWebSocket[] = [];
 
 	readyState: number = IdleWebSocket.CONNECTING;
 	binaryType: BinaryType = "blob";
+	private listeners = new Map<string, Set<(event: { data?: unknown }) => void>>();
 
-	addEventListener() {}
+	constructor() {
+		IdleWebSocket.instances.push(this);
+	}
+
+	addEventListener(type: string, listener: (event: { data?: unknown }) => void) {
+		const listeners = this.listeners.get(type) ?? new Set();
+		listeners.add(listener);
+		this.listeners.set(type, listeners);
+	}
 	send() {}
 	close() {
 		this.readyState = IdleWebSocket.CLOSED;
+	}
+
+	emit(type: string, data?: unknown) {
+		if (type === "open") this.readyState = IdleWebSocket.OPEN;
+		for (const listener of this.listeners.get(type) ?? []) listener({ data });
 	}
 }
 
 describe("DiagramEditorPage integration", () => {
 	beforeEach(() => {
+		IdleWebSocket.instances = [];
 		canvasProbe.renderCount = 0;
 		canvasProbe.selectionHandlers.clear();
 		canvasProbe.latestNodes = [];
@@ -137,6 +153,99 @@ describe("DiagramEditorPage integration", () => {
 		expect(screen.getByTestId("diagram-canvas")).toBeInTheDocument();
 		await waitFor(() => expect(canvasProbe.renderCount).toBeGreaterThan(1));
 		expect(canvasProbe.selectionHandlers.size).toBe(1);
+	});
+
+	it("does not apply content mutations to a viewer's local document", async () => {
+		const initialDoc = new Y.Doc();
+		initialDoc.getMap<StoredNode>("nodes").set("node-1", {
+			id: "node-1",
+			type: "default",
+			position: { x: 40, y: 60 },
+			data: { label: "Read only", kind: "component" },
+		});
+		const initialSnapshot = Y.encodeStateAsUpdate(initialDoc);
+		initialDoc.destroy();
+		vi.mocked(crdtApi.getSnapshot).mockResolvedValueOnce(initialSnapshot);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter initialEntries={["/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor"]}>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() => expect(canvasProbe.latestNodes).toHaveLength(1));
+		act(() => canvasProbe.onNodesChange?.([{
+			type: "position",
+			id: "node-1",
+			position: { x: 400, y: 600 },
+			dragging: false,
+		}]));
+
+		expect(canvasProbe.latestNodes[0].position).toEqual({ x: 40, y: 60 });
+		expect(crdtApi.postUpdate).not.toHaveBeenCalled();
+	});
+
+	it("stops local content mutations immediately after a live role downgrade", async () => {
+		const initialDoc = new Y.Doc();
+		initialDoc.getMap<StoredNode>("nodes").set("node-1", {
+			id: "node-1",
+			type: "default",
+			position: { x: 40, y: 60 },
+			data: { label: "Editable", kind: "component" },
+		});
+		const initialSnapshot = Y.encodeStateAsUpdate(initialDoc);
+		initialDoc.destroy();
+		vi.mocked(diagramApi.get).mockResolvedValueOnce({
+			id: "diagram-1",
+			projectId: "project-1",
+			title: "Runtime test",
+			role: "editor",
+			snapshotVersion: 1,
+			lastUpdateSeq: 0,
+		});
+		vi.mocked(crdtApi.getSnapshot).mockResolvedValueOnce(initialSnapshot);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<MemoryRouter initialEntries={["/workspaces/workspace-1/projects/project-1/diagrams/diagram-1/editor"]}>
+					<Routes>
+						<Route
+							path="/workspaces/:workspaceId/projects/:projectId/diagrams/:diagramId/editor"
+							element={<DiagramEditorPage />}
+						/>
+					</Routes>
+				</MemoryRouter>
+			</QueryClientProvider>,
+		);
+
+		await waitFor(() => {
+			expect(canvasProbe.latestNodes).toHaveLength(1);
+			expect(IdleWebSocket.instances).toHaveLength(1);
+		});
+		act(() => IdleWebSocket.instances[0].emit("message", JSON.stringify({
+			type: "access:changed",
+			workspaceId: "workspace-1",
+			projectId: "project-1",
+			diagramId: "diagram-1",
+			role: "viewer",
+		})));
+		act(() => canvasProbe.onNodesChange?.([{
+			type: "position",
+			id: "node-1",
+			position: { x: 400, y: 600 },
+			dragging: false,
+		}]));
+
+		expect(canvasProbe.latestNodes[0].position).toEqual({ x: 40, y: 60 });
 	});
 
 	it("persists the complete boundary resize as one durable Yjs update", async () => {
