@@ -10,11 +10,23 @@ export function alignDiagramNodes(nodes: DiagramNode[], selectedIds: Set<string>
 	}
 	const coordinate = axis === "horizontal" ? "y" : "x";
 	const value = selected.reduce((total, node) => total + node.position[coordinate], 0) / selected.length;
-	return nodes.map((node) =>
-		selectedIds.has(node.id) && node.type !== "boundary" ?
-			{ ...node, position: { ...node.position, [coordinate]: Math.round(value) } }
-		: node,
-	);
+	const alignedValue = Math.round(value);
+	let changed = false;
+	const alignedNodes = nodes.map((node) => {
+		if (
+			!selectedIds.has(node.id) ||
+			node.type === "comment" ||
+			node.type === "boundary" ||
+			node.position[coordinate] === alignedValue
+		) {
+			return node;
+		}
+
+		changed = true;
+		return { ...node, position: { ...node.position, [coordinate]: alignedValue } };
+	});
+
+	return changed ? alignedNodes : nodes;
 }
 
 export function autoLayoutDiagram(nodes: DiagramNode[], edges: DiagramEdge[], direction: LayoutDirection = "horizontal") {

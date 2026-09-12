@@ -5,6 +5,7 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	Circle,
+	Columns3,
 	Copy,
 	Download,
 	Edit3,
@@ -14,6 +15,7 @@ import {
 	MessageSquare,
 	Plus,
 	Redo2,
+	Rows3,
 	Save,
 	SquareDashed,
 	Trash2,
@@ -56,6 +58,7 @@ type DiagramEditorPanelProps = {
 	edgeCount: number;
 	commentCount: number;
 	selectedNodeCount: number;
+	alignableNodeCount?: number;
 	pendingUpdateCount: number;
 	snapshotVersion: number;
 	lastUpdateSeq: number;
@@ -118,6 +121,7 @@ export function DiagramEditorPanel(props: DiagramEditorPanelProps) {
 	const [activeTab, setActiveTab] = useState<PanelTab>("build");
 	const [snapshotName, setSnapshotName] = useState("");
 	const [historyFilter, setHistoryFilter] = useState<DiagramHistoryFilter>("all");
+	const alignableNodeCount = props.alignableNodeCount ?? props.selectedNodeCount;
 	const historyCounts = countDiagramHistoryKinds(props.historyItems);
 	const filteredHistoryItems = filterDiagramHistory(props.historyItems, historyFilter);
 
@@ -186,11 +190,12 @@ export function DiagramEditorPanel(props: DiagramEditorPanelProps) {
 						</div>
 						<div className={styles.actionGrid}>
 							<button className="secondary-button" type="button" onClick={props.onDuplicateSelection} disabled={props.readOnly || props.selectedNodeCount === 0}><Copy size={15} /><span>Duplicate</span></button>
-							<button className="secondary-button" type="button" onClick={() => props.onAlignSelection("horizontal")} disabled={props.readOnly || props.selectedNodeCount < 2}><span>Align rows</span></button>
-							<button className="secondary-button" type="button" onClick={() => props.onAlignSelection("vertical")} disabled={props.readOnly || props.selectedNodeCount < 2}><span>Align columns</span></button>
+							<button className="secondary-button" type="button" onClick={() => props.onAlignSelection("horizontal")} disabled={props.readOnly || alignableNodeCount < 2} title="Give the selected component nodes one shared vertical position"><Rows3 size={15} /><span>Same row</span></button>
+							<button className="secondary-button" type="button" onClick={() => props.onAlignSelection("vertical")} disabled={props.readOnly || alignableNodeCount < 2} title="Give the selected component nodes one shared horizontal position"><Columns3 size={15} /><span>Same column</span></button>
 							<button className="secondary-button" type="button" onClick={() => props.onAutoLayout("horizontal")} disabled={props.readOnly || props.nodeCount < 2}><LayoutGrid size={15} /><span>Layout L→R</span></button>
 							<button className="secondary-button" type="button" onClick={() => props.onAutoLayout("vertical")} disabled={props.readOnly || props.nodeCount < 2}><LayoutGrid size={15} /><span>Layout T→B</span></button>
 						</div>
+						<p className={styles.helperText}>Same row shares a Y position; same column shares an X position. Select at least two component nodes—boundaries stay fixed.</p>
 					</section>
 
 					<section className={styles.section} aria-labelledby="node-inspector-title">

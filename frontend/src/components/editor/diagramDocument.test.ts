@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import platformArchitectureJson from "../../../examples/platform-architecture.system-design.json?raw";
 import { createDiagramDocument, parseDiagramDocument, renderDiagramPdf, renderDiagramSvg } from "./diagramDocument";
 import type { DiagramEdge, DiagramNode } from "./diagramEditorModel";
 
@@ -10,6 +11,14 @@ const nodes: DiagramNode[] = [
 const edges: DiagramEdge[] = [{ id: "edge", source: "client", target: "api", sourceHandle: "right", targetHandle: "left", label: "HTTPS" }];
 
 describe("portable diagram documents", () => {
+	it("keeps the platform architecture example import-ready", () => {
+		const parsed = parseDiagramDocument(platformArchitectureJson);
+		expect(parsed.diagram.title).toBe("Collaborative System Design Platform");
+		expect(parsed.diagram.nodes).toHaveLength(9);
+		expect(parsed.diagram.edges).toHaveLength(9);
+		expect(parsed.diagram.comments).toHaveLength(3);
+	});
+
 	it("round-trips a versioned JSON document", () => {
 		const documentModel = createDiagramDocument("Thesis architecture", nodes, edges, []);
 		const parsed = parseDiagramDocument(JSON.stringify(documentModel));

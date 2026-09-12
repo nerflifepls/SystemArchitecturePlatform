@@ -191,6 +191,10 @@ export function DiagramEditorPage() {
 		[edges, selectedEdgeId],
 	);
 	const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+	const selectedAlignableNodeCount = useMemo(
+		() => nodes.filter((node) => selectedNodeIdSet.has(node.id) && node.type !== "boundary" && node.type !== "comment").length,
+		[nodes, selectedNodeIdSet],
+	);
 	const assessment = useMemo(() => analyzeArchitecture(nodes, edges), [edges, nodes]);
 	const documentByteSize = useMemo(() => Y.encodeStateAsUpdate(doc).byteLength, [comments, doc, edges, nodes]);
 	const selectedProtocolValue =
@@ -1496,8 +1500,14 @@ export function DiagramEditorPage() {
 	}
 
 	function alignSelection(axis: AlignmentAxis) {
-		const nextNodes = alignDiagramNodes(nodesRef.current, selectedNodeIdSet, axis);
-		persistNodeBatch(nextNodes, selectedNodeIdSet);
+		const alignableNodeIds = new Set(
+			nodesRef.current
+				.filter((node) => selectedNodeIdSet.has(node.id) && node.type !== "boundary" && node.type !== "comment")
+				.map((node) => node.id),
+		);
+		const nextNodes = alignDiagramNodes(nodesRef.current, alignableNodeIds, axis);
+		if (nextNodes === nodesRef.current) return;
+		persistNodeBatch(nextNodes, alignableNodeIds);
 	}
 
 	function autoLayout(direction: LayoutDirection) {
@@ -2078,6 +2088,7 @@ export function DiagramEditorPage() {
 					edgeCount={edges.length}
 					commentCount={comments.length}
 					selectedNodeCount={selectedNodeIds.length}
+					alignableNodeCount={selectedAlignableNodeCount}
 					pendingUpdateCount={pendingUpdateCount}
 					snapshotVersion={snapshotVersion}
 					lastUpdateSeq={lastUpdateSeq}

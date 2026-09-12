@@ -27,6 +27,22 @@ describe("diagram organization", () => {
 		expect(result.find((item) => item.id === "c")?.position.y).toBe(120);
 	});
 
+	it("places selected nodes in the same column", () => {
+		const result = alignDiagramNodes([node("a", 10, 20), node("b", 50, 80)], new Set(["a", "b"]), "vertical");
+		expect(result.map((item) => item.position.x)).toEqual([30, 30]);
+	});
+
+	it("does not report a layout change when the selected nodes are already aligned", () => {
+		const nodes = [node("a", 10, 40), node("b", 80, 40)];
+		expect(alignDiagramNodes(nodes, new Set(["a", "b"]), "horizontal")).toBe(nodes);
+	});
+
+	it("does not treat a selected boundary as an alignable component", () => {
+		const boundary = { ...node("boundary", 0, 0), type: "boundary" };
+		const nodes = [boundary, node("service", 80, 60)];
+		expect(alignDiagramNodes(nodes, new Set(["boundary", "service"]), "vertical")).toBe(nodes);
+	});
+
 	it("leaves visual boundaries in place during automatic layout", () => {
 		const boundary = { ...node("boundary", 33, 44), type: "boundary" };
 		const result = autoLayoutDiagram([boundary, node("service", 500, 500)], []);
